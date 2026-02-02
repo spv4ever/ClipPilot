@@ -64,10 +64,16 @@ body {
   border: 1px solid rgba(148, 163, 184, 0.3);
   border-radius: 24px;
   padding: 2.5rem;
-  max-width: 520px;
+  max-width: 720px;
   width: 100%;
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.6);
   backdrop-filter: blur(14px);
+}
+
+.profile {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
 }
 
 .eyebrow {
@@ -81,6 +87,11 @@ body {
 h1 {
   margin: 0 0 0.5rem;
   font-size: 2rem;
+}
+
+h3 {
+  margin: 0;
+  font-size: 1.2rem;
 }
 
 .subtitle {
@@ -119,6 +130,14 @@ h1 {
   transform: translateY(-1px);
 }
 
+.primary:disabled,
+.secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
 .secondary {
   background: transparent;
   border: 1px solid #64748b;
@@ -130,7 +149,6 @@ h1 {
   grid-template-columns: auto 1fr;
   gap: 1.5rem;
   align-items: center;
-  margin-bottom: 2rem;
 }
 
 .user img {
@@ -155,8 +173,94 @@ h1 {
   font-size: 0.9rem;
 }
 
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  border-radius: 20px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.65);
+}
+
+.panel-subtitle {
+  margin: 0.5rem 0 0;
+  color: #94a3b8;
+}
+
+.library-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.library-form label {
+  font-size: 0.9rem;
+  color: #cbd5f5;
+}
+
+.library-input {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.library-input input {
+  flex: 1;
+  min-width: 220px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  padding: 0.7rem 1.2rem;
+  background: rgba(15, 23, 42, 0.75);
+  color: #e2e8f0;
+}
+
+.library-input input:disabled {
+  background: rgba(30, 41, 59, 0.6);
+}
+
+.helper {
+  font-size: 0.85rem;
+  margin: 0;
+  color: #94a3b8;
+}
+
+.library-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(129, 140, 248, 0.5);
+  font-size: 0.9rem;
+}
+
+.tag button {
+  border: none;
+  background: transparent;
+  color: #e2e8f0;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.tag button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.empty {
+  margin: 0;
+  color: #94a3b8;
+}
+
 footer {
-  margin-top: 2rem;
   font-size: 0.85rem;
   color: #94a3b8;
 }

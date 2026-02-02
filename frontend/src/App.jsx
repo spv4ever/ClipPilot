@@ -10,11 +10,19 @@ const formatEmail = (emails) => {
   return emails[0].value;
 };
 
+const parseLibraries = (value) =>
+  value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [status, setStatus] = useState("checking");
   const [error, setError] = useState("");
   const [loginError, setLoginError] = useState("");
+  const [libraryInput, setLibraryInput] = useState("");
+  const [libraries, setLibraries] = useState(["marketing", "productos"]);
 
   const displayName = useMemo(() => user?.displayName || "", [user]);
   const email = useMemo(() => formatEmail(user?.emails), [user]);
@@ -68,6 +76,20 @@ export default function App() {
     }
   };
 
+  const handleLibrarySubmit = (event) => {
+    event.preventDefault();
+    const nextLibraries = parseLibraries(libraryInput);
+    if (nextLibraries.length === 0) return;
+    setLibraries((prev) => Array.from(new Set([...prev, ...nextLibraries])));
+    setLibraryInput("");
+  };
+
+  const handleLibraryRemove = (library) => {
+    setLibraries((prev) => prev.filter((item) => item !== library));
+  };
+
+  const isAuthenticated = status === "authenticated" && user;
+
   return (
     <div className="app">
       <header className="topbar">
@@ -75,7 +97,7 @@ export default function App() {
           <p className="eyebrow">ClipPilot</p>
         </div>
         <div className="topbar-actions">
-          {status === "authenticated" && user ? (
+          {isAuthenticated ? (
             <div className="topbar-user">
               {user.photos?.[0]?.value && (
                 <img src={user.photos[0].value} alt={displayName} />
@@ -96,19 +118,20 @@ export default function App() {
         </div>
       </header>
 
-      <main className="card">
+      <main className="card profile">
         <header>
-          <h1>Acceso con Gmail</h1>
+          <p className="eyebrow">Perfil</p>
+          <h1>Configuración de tu cuenta</h1>
           <p className="subtitle">
-            Solo permitimos cuentas Gmail. Los nuevos usuarios se registran con
-            el plan free y un ID asignado.
+            Centraliza los datos de tu usuario y conecta tus bibliotecas de
+            Cloudinary para usar ClipPilot.
           </p>
         </header>
 
         {loginError && <p className="error">{loginError}</p>}
         {error && <p className="error">{error}</p>}
 
-        {status === "authenticated" && user ? (
+        {isAuthenticated ? (
           <section className="user">
             {user.photos?.[0]?.value && (
               <img src={user.photos[0].value} alt={displayName} />
@@ -123,12 +146,60 @@ export default function App() {
           </section>
         ) : (
           <section className="cta">
-            <p>Inicia sesión con Gmail para comenzar.</p>
+            <p>Inicia sesión con Gmail para personalizar tu perfil.</p>
             <a className="primary" href={authLink}>
               Continuar con Gmail
             </a>
           </section>
         )}
+
+        <section className="panel">
+          <div>
+            <h3>Bibliotecas de Cloudinary</h3>
+            <p className="panel-subtitle">
+              Agrega una o varias bibliotecas para sincronizar tus clips.
+            </p>
+          </div>
+          <form className="library-form" onSubmit={handleLibrarySubmit}>
+            <label htmlFor="library">Nombre de biblioteca</label>
+            <div className="library-input">
+              <input
+                id="library"
+                type="text"
+                placeholder="Ej: brand-assets, producto-lanzamiento"
+                value={libraryInput}
+                onChange={(event) => setLibraryInput(event.target.value)}
+                disabled={!isAuthenticated}
+              />
+              <button className="primary" type="submit" disabled={!isAuthenticated}>
+                Agregar
+              </button>
+            </div>
+            <p className="helper">
+              Puedes escribir varios nombres separados por comas.
+            </p>
+          </form>
+
+          <div className="library-list">
+            {libraries.length > 0 ? (
+              libraries.map((library) => (
+                <span className="tag" key={library}>
+                  {library}
+                  <button
+                    type="button"
+                    onClick={() => handleLibraryRemove(library)}
+                    aria-label={`Eliminar ${library}`}
+                    disabled={!isAuthenticated}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))
+            ) : (
+              <p className="empty">Aún no has agregado bibliotecas.</p>
+            )}
+          </div>
+        </section>
 
         <footer>
           <p>
