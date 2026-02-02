@@ -10,13 +10,6 @@ const formatEmail = (emails) => {
   return emails[0].value;
 };
 
-const buildImageSet = (count, tag) =>
-  Array.from({ length: count }, (_, index) => ({
-    id: `img-${index + 1}`,
-    label: `Imagen ${index + 1}`,
-    tag,
-  }));
-
 const emptyAccountDraft = {
   id: "",
   name: "",
@@ -44,12 +37,38 @@ export default function App() {
   const [selectedLibrary, setSelectedLibrary] = useState(null);
   const [page, setPage] = useState(1);
   const [tagQuery, setTagQuery] = useState("");
+  const [tagImages, setTagImages] = useState([]);
+  const [tagLoading, setTagLoading] = useState(false);
 
   const displayName = useMemo(() => user?.displayName || "", [user]);
   const email = useMemo(() => formatEmail(user?.emails), [user]);
   const userRole = useMemo(() => user?.role || "free", [user]);
+  const normalizedTagQuery = tagQuery.trim().toLowerCase();
 
   const isAuthenticated = status === "authenticated" && user;
+
+  const loadAccounts = async () => {
+    try {
+      const response = await fetch(`${backendUrl}/api/accounts`, {
+        credentials: "include",
+      });
+
+      if (response.status === 401) {
+        setAccounts([]);
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error("No se pudieron cargar las cuentas.");
+      }
+
+      const payload = await response.json();
+      setAccounts(payload.accounts || []);
+    } catch (err) {
+      console.error(err);
+      setError("No se pudieron cargar las cuentas guardadas.");
+    }
+  };
 
   const fetchMe = async () => {
     try {
@@ -67,6 +86,7 @@ export default function App() {
       const payload = await response.json();
       setUser(payload.user);
       setStatus("authenticated");
+      loadAccounts();
     } catch (err) {
       console.error(err);
       setError("No se pudo conectar con el backend.");
@@ -85,6 +105,66 @@ export default function App() {
     fetchMe();
   }, []);
 
+  useEffect(() => {
+    if (!selectedLibrary) return;
+    const account = accounts.find(
+      (item) => item.id === selectedLibrary.accountId
+    );
+    const library = account?.libraries?.find(
+      (item) => item.id === selectedLibrary.libraryId
+    );
+    if (!account || !library) {
+      setSelectedLibrary(null);
+      setView("home");
+    }
+  }, [accounts, selectedLibrary]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const fetchTagImages = async () => {
+      if (!normalizedTagQuery || !selectedLibrary) {
+        setTagImages([]);
+        return;
+      }
+
+      setTagLoading(true);
+      try {
+        const params = new URLSearchParams({
+          tag: normalizedTagQuery,
+          accountId: selectedLibrary.accountId,
+        });
+        const response = await fetch(`${backendUrl}/api/images?${params}`, {
+          credentials: "include",
+        });
+
+        if (!response.ok) {
+          throw new Error("No se pudieron cargar las imágenes.");
+        }
+
+        const payload = await response.json();
+        if (isActive) {
+          setTagImages(payload.images || []);
+        }
+      } catch (err) {
+        console.error(err);
+        if (isActive) {
+          setError("No se pudieron cargar las imágenes del tag.");
+        }
+      } finally {
+        if (isActive) {
+          setTagLoading(false);
+        }
+      }
+    };
+
+    fetchTagImages();
+
+    return () => {
+      isActive = false;
+    };
+  }, [backendUrl, normalizedTagQuery, selectedLibrary]);
+
   const handleLogout = async () => {
     try {
       await fetch(`${backendUrl}/auth/logout`, {
@@ -93,6 +173,8 @@ export default function App() {
       });
       setUser(null);
       setStatus("guest");
+      setAccounts([]);
+      setSelectedLibrary(null);
     } catch (err) {
       console.error(err);
       setError("No se pudo cerrar sesión.");
@@ -103,36 +185,49 @@ export default function App() {
     setDraft((prev) => ({ ...prev, [field]: event.target.value }));
   };
 
-  const handleAccountSubmit = (event) => {
+  const handleAccountSubmit = async (event) => {
     event.preventDefault();
     if (!draft.name || !draft.cloudName || !draft.apiKey) return;
 
-    if (editingId) {
-      setAccounts((prev) =>
-        prev.map((account) =>
-          account.id === editingId
-            ? {
-                ...account,
-                ...draft,
-                id: editingId,
-              }
-            : account
-        )
-      );
-      setEditingId(null);
-    } else {
-      const id = `acct-${Date.now()}`;
-      setAccounts((prev) => [
-        ...prev,
-        {
-          ...draft,
-          id,
-          libraries: [],
+    try {
+      const isEditing = Boolean(editingId);
+      const url = isEditing
+        ? `${backendUrl}/api/accounts/${editingId}`
+        : `${backendUrl}/api/accounts`;
+      const method = isEditing ? "PUT" : "POST";
+      const response = await fetch(url, {
+        method,
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
         },
-      ]);
-    }
+        body: JSON.stringify({
+          name: draft.name,
+          cloudName: draft.cloudName,
+          apiKey: draft.apiKey,
+          apiSecret: draft.apiSecret,
+        }),
+      });
 
-    setDraft(emptyAccountDraft);
+      if (!response.ok) {
+        throw new Error("No se pudo guardar la cuenta.");
+      }
+
+      const payload = await response.json();
+      setAccounts((prev) => {
+        if (isEditing) {
+          return prev.map((account) =>
+            account.id === payload.account.id ? payload.account : account
+          );
+        }
+        return [...prev, payload.account];
+      });
+      setEditingId(null);
+      setDraft(emptyAccountDraft);
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo guardar la cuenta.");
+    }
   };
 
   const handleEdit = (account) => {
@@ -146,11 +241,29 @@ export default function App() {
     setEditingId(account.id);
   };
 
-  const handleDelete = (accountId) => {
-    setAccounts((prev) => prev.filter((account) => account.id !== accountId));
+  const handleDelete = async (accountId) => {
+    try {
+      const response = await fetch(`${backendUrl}/api/accounts/${accountId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error("No se pudo eliminar la cuenta.");
+      }
+
+      setAccounts((prev) => prev.filter((account) => account.id !== accountId));
+      if (selectedLibrary?.accountId === accountId) {
+        setSelectedLibrary(null);
+        setView("home");
+      }
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo eliminar la cuenta.");
+    }
   };
 
-  const handleLibraryAdd = (accountId, event) => {
+  const handleLibraryAdd = async (accountId, event) => {
     event.preventDefault();
     const form = event.currentTarget;
     const formData = new FormData(form);
@@ -159,42 +272,64 @@ export default function App() {
     const imageCount = Number(formData.get("libraryCount") || 0);
     if (!name || !tag) return;
 
-    setAccounts((prev) =>
-      prev.map((account) => {
-        if (account.id !== accountId) return account;
-        const libraries = account.libraries || [];
-        return {
-          ...account,
-          libraries: [
-            ...libraries,
-            {
-              id: `${accountId}-${name}`,
-              name,
-              tag,
-              imageCount,
-              images: buildImageSet(imageCount, tag),
-            },
-          ],
-        };
-      })
-    );
+    try {
+      const response = await fetch(
+        `${backendUrl}/api/accounts/${accountId}/libraries`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ name, tag, imageCount }),
+        }
+      );
 
-    form.reset();
+      if (!response.ok) {
+        throw new Error("No se pudo guardar la biblioteca.");
+      }
+
+      const payload = await response.json();
+      setAccounts((prev) =>
+        prev.map((account) =>
+          account.id === payload.account.id ? payload.account : account
+        )
+      );
+      form.reset();
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo guardar la biblioteca.");
+    }
   };
 
-  const handleLibraryRemove = (accountId, libraryId) => {
-    setAccounts((prev) =>
-      prev.map((account) =>
-        account.id === accountId
-          ? {
-              ...account,
-              libraries: account.libraries.filter(
-                (library) => library.id !== libraryId
-              ),
-            }
-          : account
-      )
-    );
+  const handleLibraryRemove = async (accountId, libraryId) => {
+    try {
+      const response = await fetch(
+        `${backendUrl}/api/accounts/${accountId}/libraries/${libraryId}`,
+        {
+          method: "DELETE",
+          credentials: "include",
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("No se pudo eliminar la biblioteca.");
+      }
+
+      const payload = await response.json();
+      setAccounts((prev) =>
+        prev.map((account) =>
+          account.id === payload.account.id ? payload.account : account
+        )
+      );
+      if (selectedLibrary?.libraryId === libraryId) {
+        setSelectedLibrary(null);
+        setView("home");
+      }
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo eliminar la biblioteca.");
+    }
   };
 
   const totalImagesForAccount = (account) =>
@@ -204,33 +339,35 @@ export default function App() {
     );
 
   const librariesForHome = accounts
-    .map((account) => account.libraries?.[0] && { account, library: account.libraries[0] })
+    .map(
+      (account) =>
+        account.libraries?.[0] && { account, library: account.libraries[0] }
+    )
     .filter(Boolean);
 
   const openLibrary = (account, library) => {
-    setSelectedLibrary({ account, library });
+    setSelectedLibrary({ accountId: account.id, libraryId: library.id });
     setPage(1);
     setTagQuery("");
+    setTagImages([]);
     setView("library");
   };
 
   const pageSize = 50;
-  const normalizedTagQuery = tagQuery.trim().toLowerCase();
-  const accountTaggedImages = selectedLibrary
-    ? (selectedLibrary.account.libraries || []).flatMap((library) => {
-        if (!normalizedTagQuery) return [];
-        if ((library.tag || "").toLowerCase() !== normalizedTagQuery) return [];
-        return (library.images || []).map((image) => ({
-          ...image,
-          libraryName: library.name,
-        }));
-      })
+  const selectedAccount = selectedLibrary
+    ? accounts.find((account) => account.id === selectedLibrary.accountId)
+    : null;
+  const selectedLibraryData = selectedAccount?.libraries?.find(
+    (library) => library.id === selectedLibrary?.libraryId
+  );
+  const placeholderImages = selectedLibraryData
+    ? Array.from({ length: selectedLibraryData.imageCount || 0 }, (_, index) => ({
+        id: `${selectedLibraryData.id}-${index + 1}`,
+        label: `Imagen ${index + 1}`,
+        tag: selectedLibraryData.tag,
+      }))
     : [];
-  const activeImages = selectedLibrary
-    ? normalizedTagQuery
-      ? accountTaggedImages
-      : selectedLibrary.library.images
-    : [];
+  const activeImages = normalizedTagQuery ? tagImages : placeholderImages;
   const paginatedImages = activeImages.slice((page - 1) * pageSize, page * pageSize);
   const totalPages = Math.max(1, Math.ceil(activeImages.length / pageSize));
 
@@ -493,18 +630,18 @@ export default function App() {
         </main>
       )}
 
-      {view === "library" && selectedLibrary && (
+      {view === "library" && selectedLibrary && selectedLibraryData && (
         <main className="library-view">
           <header className="library-view-header">
             <div>
               <p className="eyebrow">Biblioteca</p>
-              <h1>{selectedLibrary.library.name}</h1>
+              <h1>{selectedLibraryData.name}</h1>
               <p className="subtitle">
-                {selectedLibrary.account.name} · {selectedLibrary.library.imageCount}
+                {selectedAccount?.name} · {selectedLibraryData.imageCount}
                 {" "}imágenes disponibles
               </p>
               <p className="subtitle">
-                Tag principal: {selectedLibrary.library.tag}
+                Tag principal: {selectedLibraryData.tag}
               </p>
             </div>
             <button className="secondary" onClick={() => setView("home")}> 
@@ -527,9 +664,10 @@ export default function App() {
             />
             {normalizedTagQuery && (
               <p className="subtitle">
-                Resultados para "{normalizedTagQuery}": {accountTaggedImages.length} imágenes.
+                Resultados para "{normalizedTagQuery}": {tagImages.length} imágenes.
               </p>
             )}
+            {tagLoading && <p className="subtitle">Cargando imágenes...</p>}
           </section>
           <section className="image-grid">
             {paginatedImages.map((image, index) => (

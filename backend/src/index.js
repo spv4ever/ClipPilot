@@ -4,7 +4,8 @@ import cors from "cors";
 import dotenv from "dotenv";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
-import { MongoClient } from "mongodb";
+import crypto from "crypto";
+import { MongoClient, ObjectId } from "mongodb";
 
 dotenv.config();
 
@@ -28,6 +29,7 @@ const allowedEmailDomain = "gmail.com";
 
 let mongoClient;
 let usersCollection;
+let accountsCollection;
 
 app.use(
   cors({
@@ -53,21 +55,66 @@ app.use(
 app.use(passport.initialize());
 app.use(passport.session());
 
-const getUsersCollection = async () => {
+const getMongoClient = async () => {
   if (!mongoUri) {
     return null;
   }
 
-  if (usersCollection) {
-    return usersCollection;
+  if (mongoClient) {
+    return mongoClient;
   }
 
   mongoClient = new MongoClient(mongoUri);
   await mongoClient.connect();
-  const db = mongoClient.db(mongoDbName);
+  return mongoClient;
+};
+
+const getUsersCollection = async () => {
+  if (usersCollection) {
+    return usersCollection;
+  }
+
+  const client = await getMongoClient();
+  if (!client) {
+    return null;
+  }
+
+  const db = client.db(mongoDbName);
   usersCollection = db.collection("users");
   return usersCollection;
 };
+
+const getAccountsCollection = async () => {
+  if (accountsCollection) {
+    return accountsCollection;
+  }
+
+  const client = await getMongoClient();
+  if (!client) {
+    return null;
+  }
+
+  const db = client.db(mongoDbName);
+  accountsCollection = db.collection("accounts");
+  return accountsCollection;
+};
+
+const ensureAuthenticated = (req, res, next) => {
+  if (req.isAuthenticated && req.isAuthenticated()) {
+    return next();
+  }
+
+  return res.status(401).json({ error: "unauthenticated" });
+};
+
+const serializeAccount = (account) => ({
+  id: account._id.toString(),
+  name: account.name,
+  cloudName: account.cloudName,
+  apiKey: account.apiKey,
+  apiSecret: account.apiSecret,
+  libraries: account.libraries || [],
+});
 
 passport.use(
   new GoogleStrategy(
@@ -197,6 +244,262 @@ app.post("/auth/logout", (req, res, next) => {
       res.json({ ok: true });
     });
   });
+});
+
+app.get("/api/accounts", ensureAuthenticated, async (req, res, next) => {
+  try {
+    const accounts = await getAccountsCollection();
+    if (!accounts) {
+      return res.status(503).json({ error: "storage-unavailable" });
+    }
+
+    const userAccounts = await accounts
+      .find({ userId: req.user.id })
+      .toArray();
+
+    return res.json({ accounts: userAccounts.map(serializeAccount) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post("/api/accounts", ensureAuthenticated, async (req, res, next) => {
+  try {
+    const accounts = await getAccountsCollection();
+    if (!accounts) {
+      return res.status(503).json({ error: "storage-unavailable" });
+    }
+
+    const { name, cloudName, apiKey, apiSecret } = req.body || {};
+    if (!name || !cloudName || !apiKey) {
+      return res.status(400).json({ error: "missing-fields" });
+    }
+
+    const now = new Date();
+    const accountDoc = {
+      userId: req.user.id,
+      name,
+      cloudName,
+      apiKey,
+      apiSecret: apiSecret || "",
+      libraries: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const result = await accounts.insertOne(accountDoc);
+    const created = await accounts.findOne({ _id: result.insertedId });
+    return res.status(201).json({ account: serializeAccount(created) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.put("/api/accounts/:id", ensureAuthenticated, async (req, res, next) => {
+  try {
+    const accounts = await getAccountsCollection();
+    if (!accounts) {
+      return res.status(503).json({ error: "storage-unavailable" });
+    }
+
+    const { id } = req.params;
+    let accountId;
+    try {
+      accountId = new ObjectId(id);
+    } catch (err) {
+      return res.status(400).json({ error: "invalid-account" });
+    }
+
+    const { name, cloudName, apiKey, apiSecret } = req.body || {};
+    const update = {
+      updatedAt: new Date(),
+    };
+
+    if (name) update.name = name;
+    if (cloudName) update.cloudName = cloudName;
+    if (apiKey) update.apiKey = apiKey;
+    if (apiSecret !== undefined) update.apiSecret = apiSecret;
+
+    const result = await accounts.findOneAndUpdate(
+      { _id: accountId, userId: req.user.id },
+      { $set: update },
+      { returnDocument: "after" }
+    );
+
+    if (!result.value) {
+      return res.status(404).json({ error: "not-found" });
+    }
+
+    return res.json({ account: serializeAccount(result.value) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.delete("/api/accounts/:id", ensureAuthenticated, async (req, res, next) => {
+  try {
+    const accounts = await getAccountsCollection();
+    if (!accounts) {
+      return res.status(503).json({ error: "storage-unavailable" });
+    }
+
+    const { id } = req.params;
+    let accountId;
+    try {
+      accountId = new ObjectId(id);
+    } catch (err) {
+      return res.status(400).json({ error: "invalid-account" });
+    }
+
+    const result = await accounts.deleteOne({ _id: accountId, userId: req.user.id });
+    if (!result.deletedCount) {
+      return res.status(404).json({ error: "not-found" });
+    }
+
+    return res.json({ ok: true });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post(
+  "/api/accounts/:id/libraries",
+  ensureAuthenticated,
+  async (req, res, next) => {
+    try {
+      const accounts = await getAccountsCollection();
+      if (!accounts) {
+        return res.status(503).json({ error: "storage-unavailable" });
+      }
+
+      const { id } = req.params;
+      let accountId;
+      try {
+        accountId = new ObjectId(id);
+      } catch (err) {
+        return res.status(400).json({ error: "invalid-account" });
+      }
+
+      const { name, tag, imageCount } = req.body || {};
+      if (!name || !tag) {
+        return res.status(400).json({ error: "missing-fields" });
+      }
+
+      const library = {
+        id: crypto.randomUUID(),
+        name,
+        tag,
+        imageCount: Number(imageCount) || 0,
+        createdAt: new Date(),
+      };
+
+      const result = await accounts.findOneAndUpdate(
+        { _id: accountId, userId: req.user.id },
+        {
+          $push: { libraries: library },
+          $set: { updatedAt: new Date() },
+        },
+        { returnDocument: "after" }
+      );
+
+      if (!result.value) {
+        return res.status(404).json({ error: "not-found" });
+      }
+
+      return res.status(201).json({ account: serializeAccount(result.value) });
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+app.delete(
+  "/api/accounts/:id/libraries/:libraryId",
+  ensureAuthenticated,
+  async (req, res, next) => {
+    try {
+      const accounts = await getAccountsCollection();
+      if (!accounts) {
+        return res.status(503).json({ error: "storage-unavailable" });
+      }
+
+      const { id, libraryId } = req.params;
+      let accountId;
+      try {
+        accountId = new ObjectId(id);
+      } catch (err) {
+        return res.status(400).json({ error: "invalid-account" });
+      }
+
+      const result = await accounts.findOneAndUpdate(
+        { _id: accountId, userId: req.user.id },
+        {
+          $pull: { libraries: { id: libraryId } },
+          $set: { updatedAt: new Date() },
+        },
+        { returnDocument: "after" }
+      );
+
+      if (!result.value) {
+        return res.status(404).json({ error: "not-found" });
+      }
+
+      return res.json({ account: serializeAccount(result.value) });
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+app.get("/api/images", ensureAuthenticated, async (req, res, next) => {
+  try {
+    const accounts = await getAccountsCollection();
+    if (!accounts) {
+      return res.status(503).json({ error: "storage-unavailable" });
+    }
+
+    const tag = (req.query.tag || "").toString().trim();
+    if (!tag) {
+      return res.status(400).json({ error: "tag-required" });
+    }
+
+    const filter = { userId: req.user.id };
+    if (req.query.accountId) {
+      try {
+        filter._id = new ObjectId(req.query.accountId.toString());
+      } catch (err) {
+        return res.status(400).json({ error: "invalid-account" });
+      }
+    }
+
+    const normalizedTag = tag.toLowerCase();
+    const userAccounts = await accounts.find(filter).toArray();
+    const images = [];
+
+    userAccounts.forEach((account) => {
+      (account.libraries || []).forEach((library) => {
+        if ((library.tag || "").toLowerCase() !== normalizedTag) {
+          return;
+        }
+
+        const total = Number(library.imageCount) || 0;
+        for (let index = 0; index < total; index += 1) {
+          images.push({
+            id: `${library.id}-${index + 1}`,
+            label: `Imagen ${index + 1}`,
+            tag: library.tag,
+            libraryName: library.name,
+            libraryId: library.id,
+            accountId: account._id.toString(),
+          });
+        }
+      });
+    });
+
+    return res.json({ images });
+  } catch (error) {
+    return next(error);
+  }
 });
 
 app.listen(port, () => {
