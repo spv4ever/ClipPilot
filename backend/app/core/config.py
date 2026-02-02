@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     mongodb_db: str = "clipforge"
     redis_url: str = "redis://localhost:6379/0"
     session_secret: str = "change_me"
+    session_expire_days: int = 7
+    google_client_id: str = ""
+    frontend_origin: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parents[2] / ".env",

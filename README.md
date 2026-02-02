@@ -38,6 +38,9 @@ MONGODB_URI=mongodb+srv://<USER>:<PASSWORD>@<CLUSTER_HOST>/<DBNAME>?retryWrites=
 MONGODB_DB=clipforge
 REDIS_URL=redis://localhost:6379/0
 SESSION_SECRET=change_me
+SESSION_EXPIRE_DAYS=7
+GOOGLE_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com
+FRONTEND_ORIGIN=http://localhost:3000
 ```
 
 ## Instalación y arranque (Linux/macOS)
@@ -62,6 +65,29 @@ uvicorn app.main:app --reload
 - Endpoint de salud (ping real a MongoDB):
   - `GET http://127.0.0.1:8000/health`
   - Respuesta esperada: `{"status":"ok","mongo":"ok"}`
+
+## Autenticación con Google (Parte 2)
+### Arranque
+```bash
+cd backend
+source .venv/bin/activate
+uvicorn app.main:app --reload
+```
+
+### Login con Google
+Obtén un `id_token` válido desde tu frontend y envíalo al backend:
+```bash
+curl -X POST http://127.0.0.1:8000/v1/auth/google/login \
+  -H "Content-Type: application/json" \
+  -d '{"id_token":"<TOKEN>"}' \
+  -c cookie.txt
+```
+
+### Verificar sesión
+Usa la cookie devuelta para consultar el perfil:
+```bash
+curl http://127.0.0.1:8000/v1/me -b cookie.txt
+```
 
 ## Notas
 - **No hay Docker** ni Postgres en esta fase.
