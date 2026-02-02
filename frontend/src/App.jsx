@@ -47,13 +47,23 @@ export default function App() {
 
   const isAuthenticated = status === "authenticated" && user;
 
+  const handleUnauthorized = (response) => {
+    if (response.status !== 401) return false;
+    setUser(null);
+    setStatus("guest");
+    setAccounts([]);
+    setSelectedLibrary(null);
+    setLoginError("Tu sesión expiró. Inicia sesión de nuevo.");
+    return true;
+  };
+
   const loadAccounts = async () => {
     try {
       const response = await fetch(`${backendUrl}/api/accounts`, {
         credentials: "include",
       });
 
-      if (response.status === 401) {
+      if (handleUnauthorized(response)) {
         setAccounts([]);
         return;
       }
@@ -138,6 +148,10 @@ export default function App() {
           credentials: "include",
         });
 
+        if (handleUnauthorized(response)) {
+          return;
+        }
+
         if (!response.ok) {
           throw new Error("No se pudieron cargar las imágenes.");
         }
@@ -209,6 +223,10 @@ export default function App() {
         }),
       });
 
+      if (handleUnauthorized(response)) {
+        return;
+      }
+
       if (!response.ok) {
         throw new Error("No se pudo guardar la cuenta.");
       }
@@ -248,6 +266,10 @@ export default function App() {
         credentials: "include",
       });
 
+      if (handleUnauthorized(response)) {
+        return;
+      }
+
       if (!response.ok) {
         throw new Error("No se pudo eliminar la cuenta.");
       }
@@ -285,6 +307,10 @@ export default function App() {
         }
       );
 
+      if (handleUnauthorized(response)) {
+        return;
+      }
+
       if (!response.ok) {
         throw new Error("No se pudo guardar la biblioteca.");
       }
@@ -311,6 +337,10 @@ export default function App() {
           credentials: "include",
         }
       );
+
+      if (handleUnauthorized(response)) {
+        return;
+      }
 
       if (!response.ok) {
         throw new Error("No se pudo eliminar la biblioteca.");
