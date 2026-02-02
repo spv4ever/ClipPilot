@@ -57,6 +57,30 @@ export default function App() {
     return true;
   };
 
+  const libraryErrorMessages = {
+    "missing-fields": "Completa el nombre y el tag para guardar la biblioteca.",
+    "invalid-account":
+      "La cuenta es inválida. Actualiza la página y vuelve a intentarlo.",
+    "not-found": "No encontramos la cuenta para guardar la biblioteca.",
+    "storage-unavailable":
+      "El almacenamiento no está disponible. Intenta más tarde.",
+  };
+
+  const resolveErrorMessage = async (response, fallback, mapping = {}) => {
+    try {
+      const payload = await response.json();
+      if (payload?.error && mapping[payload.error]) {
+        return mapping[payload.error];
+      }
+      if (payload?.error) {
+        return `${fallback} (${payload.error})`;
+      }
+    } catch (err) {
+      console.warn("No se pudo leer el error del servidor.", err);
+    }
+    return fallback;
+  };
+
   const loadAccounts = async () => {
     try {
       const response = await fetch(`${backendUrl}/api/accounts`, {
@@ -292,7 +316,10 @@ export default function App() {
     const name = formData.get("libraryName");
     const tag = formData.get("libraryTag");
     const imageCount = Number(formData.get("libraryCount") || 0);
-    if (!name || !tag) return;
+    if (!name || !tag) {
+      setError("Completa el nombre y el tag para guardar la biblioteca.");
+      return;
+    }
 
     try {
       const response = await fetch(
@@ -312,7 +339,12 @@ export default function App() {
       }
 
       if (!response.ok) {
-        throw new Error("No se pudo guardar la biblioteca.");
+        const message = await resolveErrorMessage(
+          response,
+          "No se pudo guardar la biblioteca.",
+          libraryErrorMessages
+        );
+        throw new Error(message);
       }
 
       const payload = await response.json();
@@ -324,7 +356,7 @@ export default function App() {
       form.reset();
     } catch (err) {
       console.error(err);
-      setError("No se pudo guardar la biblioteca.");
+      setError(err.message || "No se pudo guardar la biblioteca.");
     }
   };
 
@@ -343,7 +375,12 @@ export default function App() {
       }
 
       if (!response.ok) {
-        throw new Error("No se pudo eliminar la biblioteca.");
+        const message = await resolveErrorMessage(
+          response,
+          "No se pudo eliminar la biblioteca.",
+          libraryErrorMessages
+        );
+        throw new Error(message);
       }
 
       const payload = await response.json();
@@ -358,7 +395,7 @@ export default function App() {
       }
     } catch (err) {
       console.error(err);
-      setError("No se pudo eliminar la biblioteca.");
+      setError(err.message || "No se pudo eliminar la biblioteca.");
     }
   };
 
