@@ -3,58 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ClipForge | Iniciar sesión</title>
+    <title>ClipForge | Acceso</title>
     <link rel="stylesheet" href="styles.css" />
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body class="page">
-    <main class="auth">
-      <section class="auth__panel">
-        <div class="auth__brand">
-          <span class="badge">ClipForge</span>
-          <h1>Accede a tu panel creativo</h1>
-          <p>
-            Inicia sesión para gestionar tus proyectos, revisar métricas y
-            publicar clips en minutos.
-          </p>
-        </div>
-        <form class="auth__form">
-          <label class="field">
-            <span>Correo electrónico</span>
-            <input type="email" placeholder="tu@correo.com" required />
-          </label>
-          <label class="field">
-            <span>Contraseña</span>
-            <input type="password" placeholder="••••••••" required />
-          </label>
-          <button class="button button--primary" type="submit">
-            Iniciar sesión
-          </button>
-          <a class="button button--ghost" href="app.html">
-            Continuar con Google
-          </a>
-          <p class="helper">
-            ¿No tienes cuenta? <a href="app.html">Explora la demo</a>
-          </p>
-        </form>
-      </section>
-      <aside class="auth__card">
-        <h2>Todo tu flujo en un solo lugar</h2>
-        <ul>
-          <li>Calendario de publicaciones inteligente.</li>
-          <li>Plantillas listas para reels y shorts.</li>
-          <li>Equipo colaborando en tiempo real.</li>
-        </ul>
-        <div class="auth__metrics">
-          <div>
-            <strong>+32%</strong>
-            <span>Engagement</span>
-          </div>
-          <div>
-            <strong>4.8</strong>
-            <span>Tiempo ahorrado</span>
-          </div>
-        </div>
-      </aside>
-    </main>
+    <div id="root" data-google-client-id=""></div>
+
+    <script type="module" src="app.js"></script>
   </body>
 </html>
