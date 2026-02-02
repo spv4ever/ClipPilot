@@ -1,9 +1,11 @@
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 
 class UserInDB(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     id: str
     email: EmailStr
     name: str
