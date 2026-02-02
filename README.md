@@ -1,94 +1,65 @@
-# ClipForge (Parte 1 - Base del proyecto)
+# ClipPilot - Reset global (Node.js + React)
 
-Backend base con **Python 3.12**, **FastAPI** y **MongoDB Atlas** (Motor). Incluye conexión real a Atlas y endpoint de salud.
+Proyecto refactorizado para que **backend (Node.js + Express)** y **frontend (React + Vite)** trabajen juntos con el objetivo principal de **login con Google**.
 
-## Requisitos
-- Python 3.12
-- Cuenta y cluster en MongoDB Atlas
+## Requisitos (Windows 11)
+- **Node.js 18+** (incluye npm)
+- Cuenta de Google Cloud con OAuth 2.0 configurado
 
-## Checklist de MongoDB Atlas
-1. Crear un **cluster** (M0 sirve para pruebas).
-2. Crear un **usuario** de base de datos.
-3. Configurar **Network Access** (agregar tu IP actual o 0.0.0.0/0 para pruebas).
-4. Obtener el **connection string** `mongodb+srv://...` y completar `.env`.
-5. Asegurar que el nombre de DB en el string coincida con `MONGODB_DB`.
+## Configuración de variables de entorno
 
-## Estructura
-```
-/backend
-  /app
-    /api/routers/health.py
-    /core/config.py
-    /core/logging.py
-    /db/mongo.py
-    /models/user.py
-    main.py
-  .env.example
-  requirements.txt
-```
-
-## Configuración
-1. Copia el archivo de ejemplo y actualiza valores:
+### Backend
+1. Copia el ejemplo:
    - `backend/.env.example` ➜ `backend/.env`
+2. Completa los valores:
 
-### Ejemplo de variables
 ```
-ENV=dev
-MONGODB_URI=mongodb+srv://<USER>:<PASSWORD>@<CLUSTER_HOST>/<DBNAME>?retryWrites=true&w=majority&appName=ClipForge
-MONGODB_DB=clipforge
-REDIS_URL=redis://localhost:6379/0
-SESSION_SECRET=change_me
-SESSION_EXPIRE_DAYS=7
-GOOGLE_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com
-FRONTEND_ORIGIN=http://localhost:3000
+PORT=4000
+FRONTEND_URL=http://localhost:5173
+GOOGLE_CLIENT_ID=tu-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=tu-client-secret
+GOOGLE_CALLBACK_URL=http://localhost:4000/auth/google/callback
+SESSION_SECRET=cambia-esto
 ```
 
-## Instalación y arranque (Linux/macOS)
-```bash
-cd backend
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+> En Google Cloud Console, agrega como **Authorized redirect URI** el valor de `GOOGLE_CALLBACK_URL`.
+
+### Frontend
+1. Copia el ejemplo:
+   - `frontend/.env.example` ➜ `frontend/.env`
+2. Completa el backend:
+
+```
+VITE_BACKEND_URL=http://localhost:4000
 ```
 
-## Instalación y arranque (Windows PowerShell)
+## Arranque del backend (Windows 11)
 ```powershell
 cd backend
-py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+npm install
+npm run dev
 ```
 
-## Verificación rápida
-- Endpoint de salud (ping real a MongoDB):
-  - `GET http://127.0.0.1:8000/health`
-  - Respuesta esperada: `{"status":"ok","mongo":"ok"}`
+El backend queda en `http://localhost:4000`.
 
-## Autenticación con Google (Parte 2)
-### Arranque
-```bash
-cd backend
-source .venv/bin/activate
-uvicorn app.main:app --reload
+## Arranque del frontend (Windows 11)
+```powershell
+cd frontend
+npm install
+npm run dev
 ```
 
-### Login con Google
-Obtén un `id_token` válido desde tu frontend y envíalo al backend:
-```bash
-curl -X POST http://127.0.0.1:8000/v1/auth/google/login \
-  -H "Content-Type: application/json" \
-  -d '{"id_token":"<TOKEN>"}' \
-  -c cookie.txt
-```
+El frontend queda en `http://localhost:5173`.
 
-### Verificar sesión
-Usa la cookie devuelta para consultar el perfil:
-```bash
-curl http://127.0.0.1:8000/v1/me -b cookie.txt
-```
+## Flujo de login con Google
+1. Abre `http://localhost:5173`.
+2. Pulsa **Continuar con Google**.
+3. Acepta el acceso en Google.
+4. Serás redirigido al frontend con la sesión activa.
 
-## Notas
-- **No hay Docker** ni Postgres en esta fase.
-- La conexión usa `mongodb+srv://` y requiere `dnspython`.
+## Endpoints útiles
+- `GET /health` → estado del backend.
+- `GET /auth/google` → inicia OAuth.
+- `GET /auth/google/callback` → callback de Google.
+- `GET /auth/me` → devuelve el usuario autenticado.
+- `POST /auth/logout` → cierra sesión.
