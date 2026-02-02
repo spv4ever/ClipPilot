@@ -2,8 +2,6 @@ from datetime import datetime, timezone
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from google.auth.transport import requests as google_requests
-from google.oauth2 import id_token as google_id_token
 from pydantic import BaseModel, EmailStr
 
 from app.api.deps import get_current_user
@@ -32,12 +30,25 @@ auth_router = APIRouter(prefix="/v1/auth", tags=["auth"])
 me_router = APIRouter(prefix="/v1", tags=["auth"])
 
 
+def _load_google_auth():
+    try:
+        from google.auth.transport import requests as google_requests
+        from google.oauth2 import id_token as google_id_token
+    except ModuleNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="google-auth not installed. Run `pip install google-auth`.",
+        ) from exc
+    return google_requests, google_id_token
+
+
 @auth_router.post("/google/login", response_model=UserResponse)
 async def google_login(
     payload: GoogleLoginRequest,
     response: Response,
     db=Depends(get_db),
 ) -> UserResponse:
+    google_requests, google_id_token = _load_google_auth()
     if not settings.google_client_id:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
