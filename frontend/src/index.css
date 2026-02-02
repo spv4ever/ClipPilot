@@ -12,10 +12,51 @@ body {
 
 .app {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  gap: 2rem;
   min-height: 100vh;
   padding: 2rem;
+}
+
+.topbar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.logo .eyebrow {
+  margin: 0;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.topbar-user {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.topbar-user img {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+}
+
+.topbar-user strong {
+  display: block;
+  font-size: 0.95rem;
+}
+
+.topbar-user .role {
+  font-size: 0.75rem;
+  color: #94a3b8;
 }
 
 .card {
@@ -106,6 +147,12 @@ h1 {
 .user p {
   margin: 0.25rem 0 1rem;
   color: #94a3b8;
+}
+
+.user .meta {
+  margin: 0;
+  color: #cbd5f5;
+  font-size: 0.9rem;
 }
 
 footer {
