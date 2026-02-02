@@ -10,10 +10,11 @@ const formatEmail = (emails) => {
   return emails[0].value;
 };
 
-const buildImageSet = (count) =>
+const buildImageSet = (count, tag) =>
   Array.from({ length: count }, (_, index) => ({
     id: `img-${index + 1}`,
     label: `Imagen ${index + 1}`,
+    tag,
   }));
 
 const emptyAccountDraft = {
@@ -42,6 +43,7 @@ export default function App() {
   const [editingId, setEditingId] = useState(null);
   const [selectedLibrary, setSelectedLibrary] = useState(null);
   const [page, setPage] = useState(1);
+  const [tagQuery, setTagQuery] = useState("");
 
   const displayName = useMemo(() => user?.displayName || "", [user]);
   const email = useMemo(() => formatEmail(user?.emails), [user]);
@@ -153,8 +155,9 @@ export default function App() {
     const form = event.currentTarget;
     const formData = new FormData(form);
     const name = formData.get("libraryName");
+    const tag = formData.get("libraryTag");
     const imageCount = Number(formData.get("libraryCount") || 0);
-    if (!name) return;
+    if (!name || !tag) return;
 
     setAccounts((prev) =>
       prev.map((account) => {
@@ -167,8 +170,9 @@ export default function App() {
             {
               id: `${accountId}-${name}`,
               name,
+              tag,
               imageCount,
-              images: buildImageSet(imageCount),
+              images: buildImageSet(imageCount, tag),
             },
           ],
         };
@@ -206,16 +210,29 @@ export default function App() {
   const openLibrary = (account, library) => {
     setSelectedLibrary({ account, library });
     setPage(1);
+    setTagQuery("");
     setView("library");
   };
 
   const pageSize = 50;
-  const paginatedImages = selectedLibrary
-    ? selectedLibrary.library.images.slice((page - 1) * pageSize, page * pageSize)
+  const normalizedTagQuery = tagQuery.trim().toLowerCase();
+  const accountTaggedImages = selectedLibrary
+    ? (selectedLibrary.account.libraries || []).flatMap((library) => {
+        if (!normalizedTagQuery) return [];
+        if ((library.tag || "").toLowerCase() !== normalizedTagQuery) return [];
+        return (library.images || []).map((image) => ({
+          ...image,
+          libraryName: library.name,
+        }));
+      })
     : [];
-  const totalPages = selectedLibrary
-    ? Math.max(1, Math.ceil(selectedLibrary.library.images.length / pageSize))
-    : 1;
+  const activeImages = selectedLibrary
+    ? normalizedTagQuery
+      ? accountTaggedImages
+      : selectedLibrary.library.images
+    : [];
+  const paginatedImages = activeImages.slice((page - 1) * pageSize, page * pageSize);
+  const totalPages = Math.max(1, Math.ceil(activeImages.length / pageSize));
 
   return (
     <div className="app">
@@ -417,6 +434,11 @@ export default function App() {
                         placeholder="Nombre de biblioteca"
                       />
                       <input
+                        name="libraryTag"
+                        type="text"
+                        placeholder="Tag (ej: verano-2024)"
+                      />
+                      <input
                         name="libraryCount"
                         type="number"
                         min="0"
@@ -439,6 +461,7 @@ export default function App() {
                             <span className="muted">
                               {library.imageCount} imágenes
                             </span>
+                            <span className="muted">Tag: {library.tag}</span>
                             <span
                               className="remove"
                               onClick={(event) => {
@@ -480,16 +503,43 @@ export default function App() {
                 {selectedLibrary.account.name} · {selectedLibrary.library.imageCount}
                 {" "}imágenes disponibles
               </p>
+              <p className="subtitle">
+                Tag principal: {selectedLibrary.library.tag}
+              </p>
             </div>
             <button className="secondary" onClick={() => setView("home")}> 
               Volver a inicio
             </button>
           </header>
+          <section className="card">
+            <h3>Buscar imágenes por tag en esta cuenta</h3>
+            <p className="subtitle">
+              Escribe un tag para ver todas las imágenes de las bibliotecas que lo usan.
+            </p>
+            <input
+              type="text"
+              placeholder="Ej: verano-2024"
+              value={tagQuery}
+              onChange={(event) => {
+                setTagQuery(event.target.value);
+                setPage(1);
+              }}
+            />
+            {normalizedTagQuery && (
+              <p className="subtitle">
+                Resultados para "{normalizedTagQuery}": {accountTaggedImages.length} imágenes.
+              </p>
+            )}
+          </section>
           <section className="image-grid">
             {paginatedImages.map((image, index) => (
               <div className="image-card" key={image.id}>
                 <div className="image-thumb">{index + 1 + (page - 1) * pageSize}</div>
                 <p>{image.label}</p>
+                {image.libraryName && (
+                  <p className="muted">Biblioteca: {image.libraryName}</p>
+                )}
+                {image.tag && <p className="muted">Tag: {image.tag}</p>}
               </div>
             ))}
           </section>
