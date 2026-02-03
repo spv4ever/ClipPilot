@@ -371,7 +371,7 @@ export default function App() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ enabled: nextEnabled }),
+          body: JSON.stringify({ enabled: nextEnabled, type: image.type }),
         }
       );
 
