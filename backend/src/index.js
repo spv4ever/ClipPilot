@@ -564,6 +564,7 @@ app.get("/api/images", ensureAuthenticated, async (req, res, next) => {
       url: resource.url,
       secureUrl: resource.secure_url,
       createdAt: resource.created_at,
+      type: resource.type || "upload",
       tags: Array.isArray(resource.tags) ? resource.tags : [],
       isReel: Array.isArray(resource.tags) ? resource.tags.includes("reel") : false,
     }));
@@ -633,6 +634,7 @@ app.get("/api/accounts/:id/images", ensureAuthenticated, async (req, res, next) 
       url: resource.url,
       secureUrl: resource.secure_url,
       createdAt: resource.created_at,
+      type: resource.type || "upload",
       tags: Array.isArray(resource.tags) ? resource.tags : [],
       isReel: Array.isArray(resource.tags) ? resource.tags.includes("reel") : false,
     }));
@@ -654,7 +656,7 @@ app.post(
       }
 
       const { id, publicId } = req.params;
-      const { enabled } = req.body || {};
+      const { enabled, type } = req.body || {};
       if (typeof enabled !== "boolean") {
         return res.status(400).json({ error: "invalid-request" });
       }
@@ -685,15 +687,18 @@ app.post(
       const baseUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/resources/image/tags/reel`;
       const tagParams = new URLSearchParams();
       tagParams.append("public_ids[]", publicId);
+      if (typeof type === "string" && type.trim()) {
+        tagParams.append("type", type.trim());
+      }
       const isAdd = enabled === true;
-      const apiUrl = isAdd ? baseUrl : `${baseUrl}?${tagParams.toString()}`;
+      const apiUrl = baseUrl;
       const response = await fetch(apiUrl, {
         method: isAdd ? "POST" : "DELETE",
         headers: {
           Authorization: `Basic ${authHeader}`,
           "Content-Type": "application/x-www-form-urlencoded",
         },
-        body: isAdd ? tagParams.toString() : undefined,
+        body: tagParams.toString(),
       });
 
       if (!response.ok) {
