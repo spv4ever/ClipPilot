@@ -682,16 +682,18 @@ app.post(
       const authHeader = Buffer.from(`${account.apiKey}:${apiSecret}`).toString(
         "base64"
       );
-      const apiUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/resources/image/tags/reel`;
+      const baseUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/resources/image/tags/reel`;
       const tagParams = new URLSearchParams();
       tagParams.append("public_ids[]", publicId);
+      const isAdd = enabled === true;
+      const apiUrl = isAdd ? baseUrl : `${baseUrl}?${tagParams.toString()}`;
       const response = await fetch(apiUrl, {
-        method: enabled ? "POST" : "DELETE",
+        method: isAdd ? "POST" : "DELETE",
         headers: {
           Authorization: `Basic ${authHeader}`,
           "Content-Type": "application/x-www-form-urlencoded",
         },
-        body: tagParams.toString(),
+        body: isAdd ? tagParams.toString() : undefined,
       });
 
       if (!response.ok) {
