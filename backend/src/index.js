@@ -683,17 +683,23 @@ app.post(
         "base64"
       );
       const apiUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/resources/image/tags/reel`;
+      const tagParams = new URLSearchParams();
+      tagParams.append("public_ids[]", publicId);
       const response = await fetch(apiUrl, {
         method: enabled ? "POST" : "DELETE",
         headers: {
           Authorization: `Basic ${authHeader}`,
-          "Content-Type": "application/json",
+          "Content-Type": "application/x-www-form-urlencoded",
         },
-        body: JSON.stringify({ public_ids: [publicId] }),
+        body: tagParams.toString(),
       });
 
       if (!response.ok) {
-        return res.status(502).json({ error: "cloudinary-update-failed" });
+        const errorBody = await response.text();
+        return res.status(response.status).json({
+          error: "cloudinary-update-failed",
+          details: errorBody || null,
+        });
       }
 
       return res.json({ ok: true, isReel: enabled });
