@@ -657,7 +657,13 @@ app.post(
 
       const { id, publicId } = req.params;
       const { enabled, type } = req.body || {};
-      if (typeof enabled !== "boolean") {
+      const parsedEnabled =
+        typeof enabled === "boolean"
+          ? enabled
+          : typeof enabled === "string"
+            ? enabled.toLowerCase() === "true"
+            : null;
+      if (parsedEnabled === null) {
         return res.status(400).json({ error: "invalid-request" });
       }
 
@@ -686,20 +692,28 @@ app.post(
       );
       const baseUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/resources/image/tags/reel`;
       const tagParams = new URLSearchParams();
+      const deliveryType =
+        typeof type === "string" && type.trim() ? type.trim() : "upload";
       tagParams.append("public_ids[]", publicId);
-      if (typeof type === "string" && type.trim()) {
-        tagParams.append("type", type.trim());
-      }
-      const isAdd = enabled === true;
-      const apiUrl = baseUrl;
-      const response = await fetch(apiUrl, {
+      tagParams.append("type", deliveryType);
+      const isAdd = parsedEnabled === true;
+      const apiUrl = new URL(baseUrl);
+      const requestInit = {
         method: isAdd ? "POST" : "DELETE",
         headers: {
           Authorization: `Basic ${authHeader}`,
           "Content-Type": "application/x-www-form-urlencoded",
         },
-        body: tagParams.toString(),
-      });
+      };
+
+      if (isAdd) {
+        requestInit.body = tagParams.toString();
+      } else {
+        apiUrl.search = tagParams.toString();
+        requestInit.body = tagParams.toString();
+      }
+
+      const response = await fetch(apiUrl, requestInit);
 
       if (!response.ok) {
         const errorBody = await response.text();
@@ -709,7 +723,7 @@ app.post(
         });
       }
 
-      return res.json({ ok: true, isReel: enabled });
+      return res.json({ ok: true, isReel: parsedEnabled });
     } catch (error) {
       return next(error);
     }
