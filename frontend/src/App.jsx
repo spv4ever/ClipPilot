@@ -28,9 +28,14 @@ export default function App() {
   const [accounts, setAccounts] = useState([]);
   const [draft, setDraft] = useState(emptyAccountDraft);
   const [editingId, setEditingId] = useState(null);
-  const [recentImages, setRecentImages] = useState([]);
+  const [selectedAccount, setSelectedAccount] = useState(null);
+  const [accountImages, setAccountImages] = useState([]);
   const [imagesStatus, setImagesStatus] = useState("idle");
   const [imagesError, setImagesError] = useState("");
+  const [nextCursor, setNextCursor] = useState(null);
+  const [cursorStack, setCursorStack] = useState([]);
+  const [currentCursor, setCurrentCursor] = useState(null);
+  const [lightboxImage, setLightboxImage] = useState(null);
 
   const displayName = useMemo(() => user?.displayName || "", [user]);
   const userRole = useMemo(() => user?.role || "free", [user]);
@@ -70,23 +75,26 @@ export default function App() {
     }
   };
 
-  const loadImages = async (accountId) => {
+  const loadImages = async ({ accountId, cursor } = {}) => {
     if (!accountId) {
-      setRecentImages([]);
+      setAccountImages([]);
       return;
     }
 
     try {
       setImagesStatus("loading");
       setImagesError("");
-      const url = new URL(`${backendUrl}/api/images`);
-      url.searchParams.set("accountId", accountId);
+      const url = new URL(`${backendUrl}/api/accounts/${accountId}/images`);
+      url.searchParams.set("limit", "50");
+      if (cursor) {
+        url.searchParams.set("cursor", cursor);
+      }
       const response = await fetch(url.toString(), {
         credentials: "include",
       });
 
       if (handleUnauthorized(response)) {
-        setRecentImages([]);
+        setAccountImages([]);
         return;
       }
 
@@ -95,11 +103,13 @@ export default function App() {
       }
 
       const payload = await response.json();
-      setRecentImages(payload.images || []);
+      setAccountImages(payload.images || []);
+      setNextCursor(payload.nextCursor || null);
+      setCurrentCursor(cursor || null);
       setImagesStatus("success");
     } catch (err) {
       console.error(err);
-      setImagesError("No se pudieron cargar las imágenes recientes.");
+      setImagesError("No se pudieron cargar las imágenes.");
       setImagesStatus("error");
     }
   };
@@ -141,11 +151,15 @@ export default function App() {
 
   useEffect(() => {
     if (!accounts.length) {
-      setRecentImages([]);
       return;
     }
-    loadImages(accounts[0].id);
-  }, [accounts]);
+    if (selectedAccount) {
+      const updated = accounts.find((account) => account.id === selectedAccount.id);
+      if (updated) {
+        setSelectedAccount(updated);
+      }
+    }
+  }, [accounts, selectedAccount]);
 
   const handleLogout = async () => {
     try {
@@ -163,7 +177,34 @@ export default function App() {
     }
   };
 
-  const previewImages = useMemo(() => recentImages.slice(0, 5), [recentImages]);
+  const currentPage = useMemo(
+    () => cursorStack.length + 1,
+    [cursorStack.length]
+  );
+
+  const handleSelectAccount = (account) => {
+    setSelectedAccount(account);
+    setCursorStack([]);
+    setCurrentCursor(null);
+    setNextCursor(null);
+    setAccountImages([]);
+    setView("account-images");
+    loadImages({ accountId: account.id });
+  };
+
+  const handleNextPage = () => {
+    if (!nextCursor || !selectedAccount) return;
+    setCursorStack((prev) => [...prev, currentCursor]);
+    loadImages({ accountId: selectedAccount.id, cursor: nextCursor });
+  };
+
+  const handlePreviousPage = () => {
+    if (!selectedAccount || cursorStack.length === 0) return;
+    const updatedStack = cursorStack.slice(0, -1);
+    const cursor = updatedStack[updatedStack.length - 1];
+    setCursorStack(updatedStack);
+    loadImages({ accountId: selectedAccount.id, cursor });
+  };
 
   const handleDraftChange = (field) => (event) => {
     setDraft((prev) => ({ ...prev, [field]: event.target.value }));
@@ -294,42 +335,42 @@ export default function App() {
               Gestiona tus cuentas de Cloudinary y mantén tus credenciales seguras.
             </p>
           </div>
-          <div className="empty-state">
-            <h2>Configura tus cuentas</h2>
-            <p>
-              Haz clic en tu usuario para agregar, editar o eliminar cuentas de
-              Cloudinary.
-            </p>
-          </div>
-          {accounts.length > 0 && (
-            <section className="card">
-              <h2>Imágenes recientes</h2>
-              <p className="subtitle">
-                Mostramos 5 imágenes recientes de la primera cuenta registrada
-                para validar el acceso a tus credenciales.
+          {accounts.length === 0 ? (
+            <div className="empty-state">
+              <h2>Configura tus cuentas</h2>
+              <p>
+                Haz clic en tu usuario para agregar, editar o eliminar cuentas de
+                Cloudinary.
               </p>
-              {imagesError && <p className="error">{imagesError}</p>}
-              {imagesStatus === "loading" && (
-                <p className="muted">Cargando imágenes...</p>
-              )}
-              {previewImages.length > 0 ? (
-                <div className="image-grid">
-                  {previewImages.map((image) => (
-                    <div className="image-card" key={image.id}>
-                      <div className="image-thumb">
-                        <img src={image.secureUrl || image.url} alt={image.publicId} />
-                      </div>
-                      <p className="muted">
-                        {image.publicId}
-                      </p>
-                    </div>
-                  ))}
+            </div>
+          ) : (
+            <section className="card">
+              <header className="list-header">
+                <div>
+                  <h2>Conexiones disponibles</h2>
+                  <p className="subtitle">
+                    Selecciona una cuenta para revisar todas las imágenes.
+                  </p>
                 </div>
-              ) : (
-                <p className="empty">
-                  Aún no hay imágenes recientes disponibles para esta cuenta.
-                </p>
-              )}
+                <button className="secondary" onClick={() => setView("cloudinary")}>
+                  Gestionar cuentas
+                </button>
+              </header>
+              <div className="account-list">
+                {accounts.map((account) => (
+                  <button
+                    className="account-row"
+                    key={account.id}
+                    onClick={() => handleSelectAccount(account)}
+                  >
+                    <div>
+                      <h3>{account.name}</h3>
+                      <p>Cloud name: {account.cloudName}</p>
+                    </div>
+                    <span className="pill">Ver imágenes</span>
+                  </button>
+                ))}
+              </div>
             </section>
           )}
         </main>
@@ -469,6 +510,104 @@ export default function App() {
             )}
           </section>
         </main>
+      )}
+
+      {view === "account-images" && selectedAccount && (
+        <main className="library-view">
+          <header className="library-view-header">
+            <div>
+              <p className="eyebrow">Cuenta Cloudinary</p>
+              <h1>{selectedAccount.name}</h1>
+              <p className="subtitle">
+                Cloud name: {selectedAccount.cloudName}
+              </p>
+            </div>
+            <button className="secondary" onClick={() => setView("home")}>
+              Volver a conexiones
+            </button>
+          </header>
+
+          <section className="card">
+            <header className="list-header">
+              <div>
+                <h2>Imágenes disponibles</h2>
+                <p className="subtitle">
+                  Página {currentPage}. Mostramos 50 imágenes por bloque.
+                </p>
+              </div>
+              <div className="pagination">
+                <button
+                  className="secondary"
+                  onClick={handlePreviousPage}
+                  disabled={cursorStack.length === 0 || imagesStatus === "loading"}
+                >
+                  Atrás
+                </button>
+                <button
+                  className="secondary"
+                  onClick={handleNextPage}
+                  disabled={!nextCursor || imagesStatus === "loading"}
+                >
+                  Siguiente
+                </button>
+              </div>
+            </header>
+
+            {imagesError && <p className="error">{imagesError}</p>}
+            {imagesStatus === "loading" && (
+              <p className="muted">Cargando imágenes...</p>
+            )}
+            {accountImages.length > 0 ? (
+              <div className="image-grid image-grid--large">
+                {accountImages.map((image) => (
+                  <div className="image-card" key={image.id}>
+                    <div className="image-thumb">
+                      <img src={image.secureUrl || image.url} alt={image.publicId} />
+                      <span className="image-url">
+                        {image.secureUrl || image.url}
+                      </span>
+                    </div>
+                    <p className="muted">{image.publicId}</p>
+                    <button
+                      className="secondary small"
+                      type="button"
+                      onClick={() => setLightboxImage(image)}
+                    >
+                      Abrir vista previa
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="empty">
+                No se encontraron imágenes para esta cuenta.
+              </p>
+            )}
+          </section>
+        </main>
+      )}
+
+      {lightboxImage && (
+        <div className="modal" role="dialog" aria-modal="true">
+          <div className="modal-content">
+            <button
+              className="secondary small modal-close"
+              onClick={() => setLightboxImage(null)}
+            >
+              Cerrar
+            </button>
+            <img
+              src={lightboxImage.secureUrl || lightboxImage.url}
+              alt={lightboxImage.publicId}
+            />
+            <p className="muted">{lightboxImage.publicId}</p>
+          </div>
+          <button
+            className="modal-backdrop"
+            onClick={() => setLightboxImage(null)}
+            aria-label="Cerrar vista previa"
+          />
+        </div>
       )}
     </div>
   );
