@@ -28,6 +28,9 @@ export default function App() {
   const [accounts, setAccounts] = useState([]);
   const [draft, setDraft] = useState(emptyAccountDraft);
   const [editingId, setEditingId] = useState(null);
+  const [recentImages, setRecentImages] = useState([]);
+  const [imagesStatus, setImagesStatus] = useState("idle");
+  const [imagesError, setImagesError] = useState("");
 
   const displayName = useMemo(() => user?.displayName || "", [user]);
   const userRole = useMemo(() => user?.role || "free", [user]);
@@ -67,6 +70,40 @@ export default function App() {
     }
   };
 
+  const loadImages = async (accountId) => {
+    if (!accountId) {
+      setRecentImages([]);
+      return;
+    }
+
+    try {
+      setImagesStatus("loading");
+      setImagesError("");
+      const url = new URL(`${backendUrl}/api/images`);
+      url.searchParams.set("accountId", accountId);
+      const response = await fetch(url.toString(), {
+        credentials: "include",
+      });
+
+      if (handleUnauthorized(response)) {
+        setRecentImages([]);
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error("No se pudieron cargar las imágenes.");
+      }
+
+      const payload = await response.json();
+      setRecentImages(payload.images || []);
+      setImagesStatus("success");
+    } catch (err) {
+      console.error(err);
+      setImagesError("No se pudieron cargar las imágenes recientes.");
+      setImagesStatus("error");
+    }
+  };
+
   const fetchMe = async () => {
     try {
       setStatus("checking");
@@ -102,6 +139,14 @@ export default function App() {
     fetchMe();
   }, []);
 
+  useEffect(() => {
+    if (!accounts.length) {
+      setRecentImages([]);
+      return;
+    }
+    loadImages(accounts[0].id);
+  }, [accounts]);
+
   const handleLogout = async () => {
     try {
       await fetch(`${backendUrl}/auth/logout`, {
@@ -118,27 +163,7 @@ export default function App() {
     }
   };
 
-  const previewImages = useMemo(() => {
-    const images = [];
-    accounts.forEach((account) => {
-      (account.libraries || []).forEach((library) => {
-        const total = Number(library.imageCount) || 0;
-        for (let index = 0; index < total; index += 1) {
-          images.push({
-            id: `${account.id}-${library.id}-${index + 1}`,
-            label: `Imagen ${index + 1}`,
-            libraryName: library.name,
-            accountName: account.name,
-          });
-        }
-      });
-    });
-
-    if (!images.length) return [];
-
-    const shuffled = [...images].sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, 5);
-  }, [accounts]);
+  const previewImages = useMemo(() => recentImages.slice(0, 5), [recentImages]);
 
   const handleDraftChange = (field) => (event) => {
     setDraft((prev) => ({ ...prev, [field]: event.target.value }));
@@ -280,23 +305,29 @@ export default function App() {
             <section className="card">
               <h2>Imágenes recientes</h2>
               <p className="subtitle">
-                Mostramos 5 imágenes aleatorias para validar el acceso a tus
-                cuentas configuradas.
+                Mostramos 5 imágenes recientes de la primera cuenta registrada
+                para validar el acceso a tus credenciales.
               </p>
+              {imagesError && <p className="error">{imagesError}</p>}
+              {imagesStatus === "loading" && (
+                <p className="muted">Cargando imágenes...</p>
+              )}
               {previewImages.length > 0 ? (
                 <div className="image-grid">
                   {previewImages.map((image) => (
                     <div className="image-card" key={image.id}>
-                      <div className="image-thumb">{image.label}</div>
+                      <div className="image-thumb">
+                        <img src={image.secureUrl || image.url} alt={image.publicId} />
+                      </div>
                       <p className="muted">
-                        {image.libraryName} · {image.accountName}
+                        {image.publicId}
                       </p>
                     </div>
                   ))}
                 </div>
               ) : (
                 <p className="empty">
-                  Aún no hay imágenes registradas en las bibliotecas guardadas.
+                  Aún no hay imágenes recientes disponibles para esta cuenta.
                 </p>
               )}
             </section>
