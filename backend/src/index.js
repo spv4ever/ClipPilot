@@ -710,7 +710,7 @@ app.post(
         requestInit.body = tagParams.toString();
       } else {
         apiUrl.search = tagParams.toString();
-        requestInit.body = tagParams.toString();
+        delete requestInit.body;
       }
 
       const response = await fetch(apiUrl, requestInit);
