@@ -39,6 +39,7 @@ export default function App() {
     setUser(null);
     setStatus("guest");
     setAccounts([]);
+    setView("home");
     setLoginError("Tu sesión expiró. Inicia sesión de nuevo.");
     return true;
   };
@@ -110,11 +111,34 @@ export default function App() {
       setUser(null);
       setStatus("guest");
       setAccounts([]);
+      setView("home");
     } catch (err) {
       console.error(err);
       setError("No se pudo cerrar sesión.");
     }
   };
+
+  const previewImages = useMemo(() => {
+    const images = [];
+    accounts.forEach((account) => {
+      (account.libraries || []).forEach((library) => {
+        const total = Number(library.imageCount) || 0;
+        for (let index = 0; index < total; index += 1) {
+          images.push({
+            id: `${account.id}-${library.id}-${index + 1}`,
+            label: `Imagen ${index + 1}`,
+            libraryName: library.name,
+            accountName: account.name,
+          });
+        }
+      });
+    });
+
+    if (!images.length) return [];
+
+    const shuffled = [...images].sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, 5);
+  }, [accounts]);
 
   const handleDraftChange = (field) => (event) => {
     setDraft((prev) => ({ ...prev, [field]: event.target.value }));
@@ -252,6 +276,31 @@ export default function App() {
               Cloudinary.
             </p>
           </div>
+          {accounts.length > 0 && (
+            <section className="card">
+              <h2>Imágenes recientes</h2>
+              <p className="subtitle">
+                Mostramos 5 imágenes aleatorias para validar el acceso a tus
+                cuentas configuradas.
+              </p>
+              {previewImages.length > 0 ? (
+                <div className="image-grid">
+                  {previewImages.map((image) => (
+                    <div className="image-card" key={image.id}>
+                      <div className="image-thumb">{image.label}</div>
+                      <p className="muted">
+                        {image.libraryName} · {image.accountName}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="empty">
+                  Aún no hay imágenes registradas en las bibliotecas guardadas.
+                </p>
+              )}
+            </section>
+          )}
         </main>
       )}
 
