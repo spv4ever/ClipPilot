@@ -542,6 +542,7 @@ app.get("/api/images", ensureAuthenticated, async (req, res, next) => {
     );
     apiUrl.searchParams.set("max_results", "5");
     apiUrl.searchParams.set("direction", "desc");
+    apiUrl.searchParams.set("tags", "true");
 
     const response = await fetch(apiUrl, {
       headers: {
@@ -563,6 +564,8 @@ app.get("/api/images", ensureAuthenticated, async (req, res, next) => {
       url: resource.url,
       secureUrl: resource.secure_url,
       createdAt: resource.created_at,
+      tags: Array.isArray(resource.tags) ? resource.tags : [],
+      isReel: Array.isArray(resource.tags) ? resource.tags.includes("reel") : false,
     }));
 
     return res.json({ images });
@@ -605,6 +608,7 @@ app.get("/api/accounts/:id/images", ensureAuthenticated, async (req, res, next) 
     );
     apiUrl.searchParams.set("max_results", limit.toString());
     apiUrl.searchParams.set("direction", "desc");
+    apiUrl.searchParams.set("tags", "true");
     if (req.query.cursor) {
       apiUrl.searchParams.set("next_cursor", req.query.cursor.toString());
     }
@@ -629,6 +633,8 @@ app.get("/api/accounts/:id/images", ensureAuthenticated, async (req, res, next) 
       url: resource.url,
       secureUrl: resource.secure_url,
       createdAt: resource.created_at,
+      tags: Array.isArray(resource.tags) ? resource.tags : [],
+      isReel: Array.isArray(resource.tags) ? resource.tags.includes("reel") : false,
     }));
 
     return res.json({ images, nextCursor: result.next_cursor || null });
@@ -636,6 +642,66 @@ app.get("/api/accounts/:id/images", ensureAuthenticated, async (req, res, next) 
     return next(error);
   }
 });
+
+app.post(
+  "/api/accounts/:id/images/:publicId/reel",
+  ensureAuthenticated,
+  async (req, res, next) => {
+    try {
+      const accounts = await getAccountsCollection();
+      if (!accounts) {
+        return res.status(503).json({ error: "storage-unavailable" });
+      }
+
+      const { id, publicId } = req.params;
+      const { enabled } = req.body || {};
+      if (typeof enabled !== "boolean") {
+        return res.status(400).json({ error: "invalid-request" });
+      }
+
+      let accountId;
+      try {
+        accountId = new ObjectId(id);
+      } catch (err) {
+        return res.status(400).json({ error: "invalid-account" });
+      }
+
+      const account = await accounts.findOne({
+        _id: accountId,
+        userId: req.user.id,
+      });
+      if (!account) {
+        return res.status(404).json({ error: "account-not-found" });
+      }
+
+      const apiSecret = decryptSecret(account.apiSecret);
+      if (!account.cloudName || !account.apiKey || !apiSecret) {
+        return res.status(400).json({ error: "cloudinary-credentials-missing" });
+      }
+
+      const authHeader = Buffer.from(`${account.apiKey}:${apiSecret}`).toString(
+        "base64"
+      );
+      const apiUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/resources/image/tags/reel`;
+      const response = await fetch(apiUrl, {
+        method: enabled ? "POST" : "DELETE",
+        headers: {
+          Authorization: `Basic ${authHeader}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ public_ids: [publicId] }),
+      });
+
+      if (!response.ok) {
+        return res.status(502).json({ error: "cloudinary-update-failed" });
+      }
+
+      return res.json({ ok: true, isReel: enabled });
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
 
 app.get(
   "/api/accounts/:id/images/count",
