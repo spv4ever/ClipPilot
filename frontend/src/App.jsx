@@ -5,11 +5,6 @@ const backendUrl =
 
 const authLink = `${backendUrl}/auth/google`;
 
-const formatEmail = (emails) => {
-  if (!emails || emails.length === 0) return "";
-  return emails[0].value;
-};
-
 const emptyAccountDraft = {
   id: "",
   name: "",
@@ -21,8 +16,7 @@ const emptyAccountDraft = {
 const steps = [
   "Crea o entra en tu panel de Cloudinary.",
   "Ve a Settings → Access Keys para copiar Cloud name, API Key y API Secret.",
-  "Regresa aquí y registra tu cuenta para sincronizar tus bibliotecas.",
-  "Añade al menos una librería para que podamos listar tus imágenes.",
+  "Regresa aquí y registra tu cuenta para gestionar tus credenciales.",
 ];
 
 export default function App() {
@@ -34,16 +28,9 @@ export default function App() {
   const [accounts, setAccounts] = useState([]);
   const [draft, setDraft] = useState(emptyAccountDraft);
   const [editingId, setEditingId] = useState(null);
-  const [selectedLibrary, setSelectedLibrary] = useState(null);
-  const [page, setPage] = useState(1);
-  const [tagQuery, setTagQuery] = useState("");
-  const [tagImages, setTagImages] = useState([]);
-  const [tagLoading, setTagLoading] = useState(false);
 
   const displayName = useMemo(() => user?.displayName || "", [user]);
-  const email = useMemo(() => formatEmail(user?.emails), [user]);
   const userRole = useMemo(() => user?.role || "free", [user]);
-  const normalizedTagQuery = tagQuery.trim().toLowerCase();
 
   const isAuthenticated = status === "authenticated" && user;
 
@@ -52,33 +39,8 @@ export default function App() {
     setUser(null);
     setStatus("guest");
     setAccounts([]);
-    setSelectedLibrary(null);
     setLoginError("Tu sesión expiró. Inicia sesión de nuevo.");
     return true;
-  };
-
-  const libraryErrorMessages = {
-    "missing-fields": "Completa el nombre y el tag para guardar la biblioteca.",
-    "invalid-account":
-      "La cuenta es inválida. Actualiza la página y vuelve a intentarlo.",
-    "not-found": "No encontramos la cuenta para guardar la biblioteca.",
-    "storage-unavailable":
-      "El almacenamiento no está disponible. Intenta más tarde.",
-  };
-
-  const resolveErrorMessage = async (response, fallback, mapping = {}) => {
-    try {
-      const payload = await response.json();
-      if (payload?.error && mapping[payload.error]) {
-        return mapping[payload.error];
-      }
-      if (payload?.error) {
-        return `${fallback} (${payload.error})`;
-      }
-    } catch (err) {
-      console.warn("No se pudo leer el error del servidor.", err);
-    }
-    return fallback;
   };
 
   const loadAccounts = async () => {
@@ -139,70 +101,6 @@ export default function App() {
     fetchMe();
   }, []);
 
-  useEffect(() => {
-    if (!selectedLibrary) return;
-    const account = accounts.find(
-      (item) => item.id === selectedLibrary.accountId
-    );
-    const library = account?.libraries?.find(
-      (item) => item.id === selectedLibrary.libraryId
-    );
-    if (!account || !library) {
-      setSelectedLibrary(null);
-      setView("home");
-    }
-  }, [accounts, selectedLibrary]);
-
-  useEffect(() => {
-    let isActive = true;
-
-    const fetchTagImages = async () => {
-      if (!normalizedTagQuery || !selectedLibrary) {
-        setTagImages([]);
-        return;
-      }
-
-      setTagLoading(true);
-      try {
-        const params = new URLSearchParams({
-          tag: normalizedTagQuery,
-          accountId: selectedLibrary.accountId,
-        });
-        const response = await fetch(`${backendUrl}/api/images?${params}`, {
-          credentials: "include",
-        });
-
-        if (handleUnauthorized(response)) {
-          return;
-        }
-
-        if (!response.ok) {
-          throw new Error("No se pudieron cargar las imágenes.");
-        }
-
-        const payload = await response.json();
-        if (isActive) {
-          setTagImages(payload.images || []);
-        }
-      } catch (err) {
-        console.error(err);
-        if (isActive) {
-          setError("No se pudieron cargar las imágenes del tag.");
-        }
-      } finally {
-        if (isActive) {
-          setTagLoading(false);
-        }
-      }
-    };
-
-    fetchTagImages();
-
-    return () => {
-      isActive = false;
-    };
-  }, [backendUrl, normalizedTagQuery, selectedLibrary]);
-
   const handleLogout = async () => {
     try {
       await fetch(`${backendUrl}/auth/logout`, {
@@ -212,7 +110,6 @@ export default function App() {
       setUser(null);
       setStatus("guest");
       setAccounts([]);
-      setSelectedLibrary(null);
     } catch (err) {
       console.error(err);
       setError("No se pudo cerrar sesión.");
@@ -233,18 +130,19 @@ export default function App() {
         ? `${backendUrl}/api/accounts/${editingId}`
         : `${backendUrl}/api/accounts`;
       const method = isEditing ? "PUT" : "POST";
+      const requestPayload = {
+        name: draft.name,
+        cloudName: draft.cloudName,
+        apiKey: draft.apiKey,
+        ...(draft.apiSecret ? { apiSecret: draft.apiSecret } : {}),
+      };
       const response = await fetch(url, {
         method,
         credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          name: draft.name,
-          cloudName: draft.cloudName,
-          apiKey: draft.apiKey,
-          apiSecret: draft.apiSecret,
-        }),
+        body: JSON.stringify(requestPayload),
       });
 
       if (handleUnauthorized(response)) {
@@ -278,7 +176,7 @@ export default function App() {
       name: account.name,
       cloudName: account.cloudName,
       apiKey: account.apiKey,
-      apiSecret: account.apiSecret,
+      apiSecret: "",
     });
     setEditingId(account.id);
   };
@@ -299,144 +197,11 @@ export default function App() {
       }
 
       setAccounts((prev) => prev.filter((account) => account.id !== accountId));
-      if (selectedLibrary?.accountId === accountId) {
-        setSelectedLibrary(null);
-        setView("home");
-      }
     } catch (err) {
       console.error(err);
       setError("No se pudo eliminar la cuenta.");
     }
   };
-
-  const handleLibraryAdd = async (accountId, event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const formData = new FormData(form);
-    const name = formData.get("libraryName");
-    const tag = formData.get("libraryTag");
-    const imageCount = Number(formData.get("libraryCount") || 0);
-    if (!name || !tag) {
-      setError("Completa el nombre y el tag para guardar la biblioteca.");
-      return;
-    }
-
-    try {
-      const response = await fetch(
-        `${backendUrl}/api/accounts/${accountId}/libraries`,
-        {
-          method: "POST",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ name, tag, imageCount }),
-        }
-      );
-
-      if (handleUnauthorized(response)) {
-        return;
-      }
-
-      if (!response.ok) {
-        const message = await resolveErrorMessage(
-          response,
-          "No se pudo guardar la biblioteca.",
-          libraryErrorMessages
-        );
-        throw new Error(message);
-      }
-
-      const payload = await response.json();
-      setAccounts((prev) =>
-        prev.map((account) =>
-          account.id === payload.account.id ? payload.account : account
-        )
-      );
-      form.reset();
-    } catch (err) {
-      console.error(err);
-      setError(err.message || "No se pudo guardar la biblioteca.");
-    }
-  };
-
-  const handleLibraryRemove = async (accountId, libraryId) => {
-    try {
-      const response = await fetch(
-        `${backendUrl}/api/accounts/${accountId}/libraries/${libraryId}`,
-        {
-          method: "DELETE",
-          credentials: "include",
-        }
-      );
-
-      if (handleUnauthorized(response)) {
-        return;
-      }
-
-      if (!response.ok) {
-        const message = await resolveErrorMessage(
-          response,
-          "No se pudo eliminar la biblioteca.",
-          libraryErrorMessages
-        );
-        throw new Error(message);
-      }
-
-      const payload = await response.json();
-      setAccounts((prev) =>
-        prev.map((account) =>
-          account.id === payload.account.id ? payload.account : account
-        )
-      );
-      if (selectedLibrary?.libraryId === libraryId) {
-        setSelectedLibrary(null);
-        setView("home");
-      }
-    } catch (err) {
-      console.error(err);
-      setError(err.message || "No se pudo eliminar la biblioteca.");
-    }
-  };
-
-  const totalImagesForAccount = (account) =>
-    (account.libraries || []).reduce(
-      (total, library) => total + (library.imageCount || 0),
-      0
-    );
-
-  const librariesForHome = accounts
-    .map(
-      (account) =>
-        account.libraries?.[0] && { account, library: account.libraries[0] }
-    )
-    .filter(Boolean);
-
-  const openLibrary = (account, library) => {
-    setSelectedLibrary({ accountId: account.id, libraryId: library.id });
-    setPage(1);
-    setTagQuery("");
-    setTagImages([]);
-    setView("library");
-  };
-
-  const pageSize = 50;
-  const selectedAccount = selectedLibrary
-    ? accounts.find((account) => account.id === selectedLibrary.accountId)
-    : null;
-  const selectedLibraryData = selectedAccount?.libraries?.find(
-    (library) => library.id === selectedLibrary?.libraryId
-  );
-  const placeholderImages = selectedLibraryData
-    ? Array.from({ length: selectedLibraryData.imageCount || 0 }, (_, index) => ({
-        id: `${selectedLibraryData.id}-${index + 1}`,
-        label: `Imagen ${index + 1}`,
-        tag: selectedLibraryData.tag,
-      }))
-    : [];
-  const activeImages = normalizedTagQuery ? tagImages : placeholderImages;
-  const paginatedImages = activeImages.slice((page - 1) * pageSize, page * pageSize);
-  const totalPages = Math.max(1, Math.ceil(activeImages.length / pageSize));
 
   return (
     <div className="app">
@@ -474,39 +239,19 @@ export default function App() {
       {view === "home" && (
         <main className="hero">
           <div className="hero-copy">
-            <p className="eyebrow">Bibliotecas Cloudinary</p>
+            <p className="eyebrow">Cuentas Cloudinary</p>
             <h1>ClipPilot</h1>
             <p className="subtitle">
-              Gestiona tus cuentas y accede a tus bibliotecas visuales en un solo lugar.
+              Gestiona tus cuentas de Cloudinary y mantén tus credenciales seguras.
             </p>
           </div>
-          <section className="library-grid">
-            {librariesForHome.length > 0 ? (
-              librariesForHome.map(({ account, library }) => (
-                <button
-                  key={library.id}
-                  className="library-card"
-                  onClick={() => openLibrary(account, library)}
-                >
-                  <div className="library-icon">📁</div>
-                  <div>
-                    <strong>{library.name}</strong>
-                    <p>
-                      {account.name} · {library.imageCount} imágenes
-                    </p>
-                  </div>
-                </button>
-              ))
-            ) : (
-              <div className="empty-state">
-                <h2>Sin bibliotecas aún</h2>
-                <p>
-                  Haz clic en tu usuario para conectar cuentas de Cloudinary y
-                  mostrar tus librerías aquí.
-                </p>
-              </div>
-            )}
-          </section>
+          <div className="empty-state">
+            <h2>Configura tus cuentas</h2>
+            <p>
+              Haz clic en tu usuario para agregar, editar o eliminar cuentas de
+              Cloudinary.
+            </p>
+          </div>
         </main>
       )}
 
@@ -517,7 +262,7 @@ export default function App() {
               <p className="eyebrow">Gestión de Cloudinary</p>
               <h1>Conecta tus cuentas</h1>
               <p className="subtitle">
-                Guarda varias cuentas y define qué bibliotecas sincronizar.
+                Guarda varias cuentas y mantén tus credenciales a la mano.
               </p>
             </div>
             <button className="secondary" onClick={() => setView("home")}>
@@ -571,10 +316,18 @@ export default function App() {
                     type="password"
                     value={draft.apiSecret}
                     onChange={handleDraftChange("apiSecret")}
-                    placeholder="••••••••"
+                    placeholder={
+                      editingId ? "Deja vacío para mantener el secreto actual" : "••••••••"
+                    }
                   />
                 </label>
               </div>
+              {editingId && (
+                <p className="muted">
+                  El secreto actual está guardado. Solo escribe uno nuevo si deseas
+                  reemplazarlo.
+                </p>
+              )}
               <div className="form-actions">
                 <button className="primary" type="submit">
                   {editingId ? "Guardar cambios" : "Agregar cuenta"}
@@ -603,7 +356,11 @@ export default function App() {
                     <div>
                       <h3>{account.name}</h3>
                       <p>Cloud name: {account.cloudName}</p>
-                      <p>Total imágenes: {totalImagesForAccount(account)}</p>
+                      <p>API Key: {account.apiKey}</p>
+                      <p>
+                        API Secret:{" "}
+                        {account.apiSecretConfigured ? "Guardado" : "Pendiente"}
+                      </p>
                     </div>
                     <div className="account-actions">
                       <button
@@ -620,153 +377,17 @@ export default function App() {
                       </button>
                     </div>
                   </header>
-
-                  <div className="library-section">
-                    <div className="library-header">
-                      <h4>Bibliotecas</h4>
-                      <span>
-                        {(account.libraries || []).length} bibliotecas
-                      </span>
-                    </div>
-                    <form
-                      className="library-form"
-                      onSubmit={(event) => handleLibraryAdd(account.id, event)}
-                    >
-                      <input
-                        name="libraryName"
-                        type="text"
-                        placeholder="Nombre de biblioteca"
-                      />
-                      <input
-                        name="libraryTag"
-                        type="text"
-                        placeholder="Tag (ej: verano-2024)"
-                      />
-                      <input
-                        name="libraryCount"
-                        type="number"
-                        min="0"
-                        placeholder="Imágenes"
-                      />
-                      <button className="primary" type="submit">
-                        Añadir biblioteca
-                      </button>
-                    </form>
-                    <div className="library-list">
-                      {(account.libraries || []).length > 0 ? (
-                        account.libraries.map((library) => (
-                          <button
-                            key={library.id}
-                            type="button"
-                            className="library-pill"
-                            onClick={() => openLibrary(account, library)}
-                          >
-                            <span>{library.name}</span>
-                            <span className="muted">
-                              {library.imageCount} imágenes
-                            </span>
-                            <span className="muted">Tag: {library.tag}</span>
-                            <span
-                              className="remove"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleLibraryRemove(account.id, library.id);
-                              }}
-                            >
-                              ×
-                            </span>
-                          </button>
-                        ))
-                      ) : (
-                        <p className="empty">Aún no has agregado bibliotecas.</p>
-                      )}
-                    </div>
-                  </div>
                 </article>
               ))
             ) : (
               <div className="empty-state">
                 <h2>Sin cuentas registradas</h2>
                 <p>
-                  Crea una cuenta para empezar a sincronizar tus bibliotecas y
-                  visualizar imágenes en ClipPilot.
+                  Crea una cuenta para empezar a gestionar tus credenciales en ClipPilot.
                 </p>
               </div>
             )}
           </section>
-        </main>
-      )}
-
-      {view === "library" && selectedLibrary && selectedLibraryData && (
-        <main className="library-view">
-          <header className="library-view-header">
-            <div>
-              <p className="eyebrow">Biblioteca</p>
-              <h1>{selectedLibraryData.name}</h1>
-              <p className="subtitle">
-                {selectedAccount?.name} · {selectedLibraryData.imageCount}
-                {" "}imágenes disponibles
-              </p>
-              <p className="subtitle">
-                Tag principal: {selectedLibraryData.tag}
-              </p>
-            </div>
-            <button className="secondary" onClick={() => setView("home")}> 
-              Volver a inicio
-            </button>
-          </header>
-          <section className="card">
-            <h3>Buscar imágenes por tag en esta cuenta</h3>
-            <p className="subtitle">
-              Escribe un tag para ver todas las imágenes de las bibliotecas que lo usan.
-            </p>
-            <input
-              type="text"
-              placeholder="Ej: verano-2024"
-              value={tagQuery}
-              onChange={(event) => {
-                setTagQuery(event.target.value);
-                setPage(1);
-              }}
-            />
-            {normalizedTagQuery && (
-              <p className="subtitle">
-                Resultados para "{normalizedTagQuery}": {tagImages.length} imágenes.
-              </p>
-            )}
-            {tagLoading && <p className="subtitle">Cargando imágenes...</p>}
-          </section>
-          <section className="image-grid">
-            {paginatedImages.map((image, index) => (
-              <div className="image-card" key={image.id}>
-                <div className="image-thumb">{index + 1 + (page - 1) * pageSize}</div>
-                <p>{image.label}</p>
-                {image.libraryName && (
-                  <p className="muted">Biblioteca: {image.libraryName}</p>
-                )}
-                {image.tag && <p className="muted">Tag: {image.tag}</p>}
-              </div>
-            ))}
-          </section>
-          <footer className="pagination">
-            <button
-              className="secondary"
-              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-              disabled={page === 1}
-            >
-              Anterior
-            </button>
-            <span>
-              Página {page} de {totalPages}
-            </span>
-            <button
-              className="secondary"
-              onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
-              disabled={page === totalPages}
-            >
-              Siguiente
-            </button>
-          </footer>
         </main>
       )}
     </div>
