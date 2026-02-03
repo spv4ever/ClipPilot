@@ -571,6 +571,72 @@ app.get("/api/images", ensureAuthenticated, async (req, res, next) => {
   }
 });
 
+app.get("/api/accounts/:id/images", ensureAuthenticated, async (req, res, next) => {
+  try {
+    const accounts = await getAccountsCollection();
+    if (!accounts) {
+      return res.status(503).json({ error: "storage-unavailable" });
+    }
+
+    const { id } = req.params;
+    let accountId;
+    try {
+      accountId = new ObjectId(id);
+    } catch (err) {
+      return res.status(400).json({ error: "invalid-account" });
+    }
+
+    const account = await accounts.findOne({ _id: accountId, userId: req.user.id });
+    if (!account) {
+      return res.status(404).json({ error: "account-not-found" });
+    }
+
+    const apiSecret = decryptSecret(account.apiSecret);
+    if (!account.cloudName || !account.apiKey || !apiSecret) {
+      return res.status(400).json({ error: "cloudinary-credentials-missing" });
+    }
+
+    const limit = Math.min(Number(req.query.limit) || 50, 100);
+    const authHeader = Buffer.from(`${account.apiKey}:${apiSecret}`).toString(
+      "base64"
+    );
+    const apiUrl = new URL(
+      `https://api.cloudinary.com/v1_1/${account.cloudName}/resources/image`
+    );
+    apiUrl.searchParams.set("max_results", limit.toString());
+    apiUrl.searchParams.set("direction", "desc");
+    if (req.query.cursor) {
+      apiUrl.searchParams.set("next_cursor", req.query.cursor.toString());
+    }
+
+    const response = await fetch(apiUrl, {
+      headers: {
+        Authorization: `Basic ${authHeader}`,
+      },
+    });
+
+    if (!response.ok) {
+      return res.status(502).json({ error: "cloudinary-fetch-failed" });
+    }
+
+    const result = await response.json();
+    const images = (result.resources || []).map((resource) => ({
+      id: resource.asset_id || resource.public_id,
+      publicId: resource.public_id,
+      format: resource.format,
+      width: resource.width,
+      height: resource.height,
+      url: resource.url,
+      secureUrl: resource.secure_url,
+      createdAt: resource.created_at,
+    }));
+
+    return res.json({ images, nextCursor: result.next_cursor || null });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 app.listen(port, () => {
   console.log(`Backend listening on http://localhost:${port}`);
 });
