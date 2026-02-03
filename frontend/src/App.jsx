@@ -36,6 +36,8 @@ export default function App() {
   const [cursorStack, setCursorStack] = useState([]);
   const [currentCursor, setCurrentCursor] = useState(null);
   const [lightboxImage, setLightboxImage] = useState(null);
+  const [imageCounts, setImageCounts] = useState({});
+  const [imageCountsStatus, setImageCountsStatus] = useState("idle");
 
   const displayName = useMemo(() => user?.displayName || "", [user]);
   const userRole = useMemo(() => user?.role || "free", [user]);
@@ -114,6 +116,57 @@ export default function App() {
     }
   };
 
+  const loadImageCounts = async (accountsToLoad) => {
+    if (!accountsToLoad.length) {
+      setImageCounts({});
+      return;
+    }
+
+    try {
+      setImageCountsStatus("loading");
+      const results = await Promise.all(
+        accountsToLoad.map(async (account) => {
+          try {
+            const response = await fetch(
+              `${backendUrl}/api/accounts/${account.id}/images/count`,
+              {
+                credentials: "include",
+              }
+            );
+
+            if (handleUnauthorized(response)) {
+              return { id: account.id, totalCount: null, unauthorized: true };
+            }
+
+            if (!response.ok) {
+              throw new Error("count-failed");
+            }
+
+            const payload = await response.json();
+            return { id: account.id, totalCount: payload.totalCount };
+          } catch (err) {
+            console.error(err);
+            return { id: account.id, totalCount: null };
+          }
+        })
+      );
+
+      if (results.some((item) => item.unauthorized)) {
+        return;
+      }
+
+      setImageCounts((prev) => {
+        const next = { ...prev };
+        results.forEach((item) => {
+          next[item.id] = item.totalCount;
+        });
+        return next;
+      });
+    } finally {
+      setImageCountsStatus("idle");
+    }
+  };
+
   const fetchMe = async () => {
     try {
       setStatus("checking");
@@ -151,6 +204,7 @@ export default function App() {
 
   useEffect(() => {
     if (!accounts.length) {
+      setImageCounts({});
       return;
     }
     if (selectedAccount) {
@@ -160,6 +214,13 @@ export default function App() {
       }
     }
   }, [accounts, selectedAccount]);
+
+  useEffect(() => {
+    if (!accounts.length || !isAuthenticated) {
+      return;
+    }
+    loadImageCounts(accounts);
+  }, [accounts, isAuthenticated]);
 
   const handleLogout = async () => {
     try {
@@ -367,7 +428,18 @@ export default function App() {
                       <h3>{account.name}</h3>
                       <p>Cloud name: {account.cloudName}</p>
                     </div>
-                    <span className="pill">Ver imágenes</span>
+                    <div className="account-row-actions">
+                      <span className="pill pill--count">
+                        {typeof imageCounts[account.id] === "number"
+                          ? `${imageCounts[account.id]} ${
+                              imageCounts[account.id] === 1 ? "imagen" : "imágenes"
+                            }`
+                          : imageCountsStatus === "loading"
+                          ? "Cargando..."
+                          : "Sin datos"}
+                      </span>
+                      <span className="pill">Ver imágenes</span>
+                    </div>
                   </button>
                 ))}
               </div>
@@ -567,7 +639,6 @@ export default function App() {
                         {image.secureUrl || image.url}
                       </span>
                     </div>
-                    <p className="muted">{image.publicId}</p>
                     <button
                       className="secondary small"
                       type="button"

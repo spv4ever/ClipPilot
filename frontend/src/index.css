@@ -264,6 +264,14 @@ h3 {
   cursor: pointer;
 }
 
+.account-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .account-row h3 {
   margin-bottom: 0.35rem;
 }
@@ -284,6 +292,12 @@ h3 {
   color: #e2e8f0;
   font-size: 0.85rem;
   white-space: nowrap;
+}
+
+.pill--count {
+  background: rgba(148, 163, 184, 0.2);
+  border-color: rgba(148, 163, 184, 0.55);
+  color: #e2e8f0;
 }
 
 .account-form h3 {
