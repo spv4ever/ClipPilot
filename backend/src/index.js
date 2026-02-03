@@ -153,6 +153,26 @@ const encryptSecret = (value) => {
   return `${iv.toString("base64")}:${tag}:${encrypted}`;
 };
 
+const decryptSecret = (value) => {
+  if (!value) return "";
+  const parts = value.split(":");
+  if (parts.length !== 3) {
+    return value;
+  }
+  const [ivPart, tagPart, encryptedPart] = parts;
+  try {
+    const iv = Buffer.from(ivPart, "base64");
+    const tag = Buffer.from(tagPart, "base64");
+    const decipher = crypto.createDecipheriv("aes-256-gcm", accountSecretKey, iv);
+    decipher.setAuthTag(tag);
+    let decrypted = decipher.update(encryptedPart, "base64", "utf8");
+    decrypted += decipher.final("utf8");
+    return decrypted;
+  } catch (error) {
+    return "";
+  }
+};
+
 passport.use(
   new GoogleStrategy(
     {
@@ -495,11 +515,6 @@ app.get("/api/images", ensureAuthenticated, async (req, res, next) => {
       return res.status(503).json({ error: "storage-unavailable" });
     }
 
-    const tag = (req.query.tag || "").toString().trim();
-    if (!tag) {
-      return res.status(400).json({ error: "tag-required" });
-    }
-
     const filter = { userId: req.user.id };
     if (req.query.accountId) {
       try {
@@ -509,29 +524,46 @@ app.get("/api/images", ensureAuthenticated, async (req, res, next) => {
       }
     }
 
-    const normalizedTag = tag.toLowerCase();
-    const userAccounts = await accounts.find(filter).toArray();
-    const images = [];
+    const account = await accounts.findOne(filter);
+    if (!account) {
+      return res.status(404).json({ error: "account-not-found" });
+    }
 
-    userAccounts.forEach((account) => {
-      (account.libraries || []).forEach((library) => {
-        if ((library.tag || "").toLowerCase() !== normalizedTag) {
-          return;
-        }
+    const apiSecret = decryptSecret(account.apiSecret);
+    if (!account.cloudName || !account.apiKey || !apiSecret) {
+      return res.status(400).json({ error: "cloudinary-credentials-missing" });
+    }
 
-        const total = Number(library.imageCount) || 0;
-        for (let index = 0; index < total; index += 1) {
-          images.push({
-            id: `${library.id}-${index + 1}`,
-            label: `Imagen ${index + 1}`,
-            tag: library.tag,
-            libraryName: library.name,
-            libraryId: library.id,
-            accountId: account._id.toString(),
-          });
-        }
-      });
+    const authHeader = Buffer.from(`${account.apiKey}:${apiSecret}`).toString(
+      "base64"
+    );
+    const apiUrl = new URL(
+      `https://api.cloudinary.com/v1_1/${account.cloudName}/resources/image`
+    );
+    apiUrl.searchParams.set("max_results", "5");
+    apiUrl.searchParams.set("direction", "desc");
+
+    const response = await fetch(apiUrl, {
+      headers: {
+        Authorization: `Basic ${authHeader}`,
+      },
     });
+
+    if (!response.ok) {
+      return res.status(502).json({ error: "cloudinary-fetch-failed" });
+    }
+
+    const result = await response.json();
+    const images = (result.resources || []).slice(0, 5).map((resource) => ({
+      id: resource.asset_id || resource.public_id,
+      publicId: resource.public_id,
+      format: resource.format,
+      width: resource.width,
+      height: resource.height,
+      url: resource.url,
+      secureUrl: resource.secure_url,
+      createdAt: resource.created_at,
+    }));
 
     return res.json({ images });
   } catch (error) {
