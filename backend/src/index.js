@@ -24,7 +24,25 @@ const callbackUrl =
   process.env.GOOGLE_CALLBACK_URL ||
   "http://localhost:4000/auth/google/callback";
 const mongoUri = process.env.MONGODB_URI;
-const mongoDbName = process.env.MONGODB_DB || "clippilot";
+const defaultDbName = "clippilot";
+const resolveMongoDbName = () => {
+  if (process.env.MONGODB_DB) {
+    return process.env.MONGODB_DB;
+  }
+
+  if (!mongoUri) {
+    return defaultDbName;
+  }
+
+  try {
+    const parsed = new URL(mongoUri);
+    const candidate = parsed.pathname?.replace("/", "").trim();
+    return candidate || defaultDbName;
+  } catch (error) {
+    return defaultDbName;
+  }
+};
+const mongoDbName = resolveMongoDbName();
 const allowedEmailDomain = "gmail.com";
 
 let mongoClient;
