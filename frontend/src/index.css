@@ -425,6 +425,13 @@ input {
   text-align: center;
 }
 
+.image-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: center;
+}
+
 .image-thumb {
   height: 120px;
   border-radius: 12px;
@@ -462,6 +469,12 @@ input {
 .small {
   padding: 0.35rem 0.85rem;
   font-size: 0.8rem;
+}
+
+.reel-toggle.active {
+  border-color: rgba(56, 189, 248, 0.9);
+  color: #e0f2fe;
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.35);
 }
 
 .modal {

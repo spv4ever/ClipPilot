@@ -38,6 +38,7 @@ export default function App() {
   const [lightboxImage, setLightboxImage] = useState(null);
   const [imageCounts, setImageCounts] = useState({});
   const [imageCountsStatus, setImageCountsStatus] = useState("idle");
+  const [reelUpdating, setReelUpdating] = useState({});
 
   const displayName = useMemo(() => user?.displayName || "", [user]);
   const userRole = useMemo(() => user?.role || "free", [user]);
@@ -354,6 +355,59 @@ export default function App() {
     }
   };
 
+  const handleToggleReel = async (image) => {
+    if (!selectedAccount) return;
+    const nextEnabled = !image.isReel;
+    setReelUpdating((prev) => ({ ...prev, [image.id]: true }));
+    setImagesError("");
+    try {
+      const response = await fetch(
+        `${backendUrl}/api/accounts/${selectedAccount.id}/images/${encodeURIComponent(
+          image.publicId
+        )}/reel`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ enabled: nextEnabled }),
+        }
+      );
+
+      if (handleUnauthorized(response)) {
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error("update-failed");
+      }
+
+      setAccountImages((prev) =>
+        prev.map((item) =>
+          item.id === image.id
+            ? {
+                ...item,
+                isReel: nextEnabled,
+                tags: nextEnabled
+                  ? Array.from(new Set([...(item.tags || []), "reel"]))
+                  : (item.tags || []).filter((tag) => tag !== "reel"),
+              }
+            : item
+        )
+      );
+    } catch (err) {
+      console.error(err);
+      setImagesError("No se pudo actualizar la etiqueta Reel.");
+    } finally {
+      setReelUpdating((prev) => {
+        const next = { ...prev };
+        delete next[image.id];
+        return next;
+      });
+    }
+  };
+
   return (
     <div className="app">
       <header className="topbar">
@@ -639,13 +693,25 @@ export default function App() {
                         {image.secureUrl || image.url}
                       </span>
                     </div>
-                    <button
-                      className="secondary small"
-                      type="button"
-                      onClick={() => setLightboxImage(image)}
-                    >
-                      Abrir vista previa
-                    </button>
+                    <div className="image-actions">
+                      <button
+                        className="secondary small"
+                        type="button"
+                        onClick={() => setLightboxImage(image)}
+                      >
+                        Abrir vista previa
+                      </button>
+                      <button
+                        className={`secondary small reel-toggle${
+                          image.isReel ? " active" : ""
+                        }`}
+                        type="button"
+                        onClick={() => handleToggleReel(image)}
+                        disabled={reelUpdating[image.id]}
+                      >
+                        {image.isReel ? "Reel activo" : "Reel"}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
