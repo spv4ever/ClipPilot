@@ -644,7 +644,7 @@ app.get("/api/accounts/:id/images", ensureAuthenticated, async (req, res, next) 
 });
 
 app.post(
-  "/api/accounts/:id/images/:publicId/reel",
+  "/api/accounts/:id/images/:publicId(*)/reel",
   ensureAuthenticated,
   async (req, res, next) => {
     try {
