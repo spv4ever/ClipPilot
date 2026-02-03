@@ -686,14 +686,14 @@ app.post(
       const tagParams = new URLSearchParams();
       tagParams.append("public_ids[]", publicId);
       const isAdd = enabled === true;
-      const apiUrl = isAdd ? baseUrl : `${baseUrl}?${tagParams.toString()}`;
+      const apiUrl = baseUrl;
       const response = await fetch(apiUrl, {
         method: isAdd ? "POST" : "DELETE",
         headers: {
           Authorization: `Basic ${authHeader}`,
           "Content-Type": "application/x-www-form-urlencoded",
         },
-        body: isAdd ? tagParams.toString() : undefined,
+        body: tagParams.toString(),
       });
 
       if (!response.ok) {
