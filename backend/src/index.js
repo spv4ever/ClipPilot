@@ -19,6 +19,9 @@ if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
 if (!process.env.MONGODB_URI) {
   console.warn("Missing MONGODB_URI in environment. Users will not persist.");
 }
+if (!process.env.ACCOUNT_SECRET_KEY && !process.env.SESSION_SECRET) {
+  console.warn("Missing ACCOUNT_SECRET_KEY or SESSION_SECRET in environment.");
+}
 
 const callbackUrl =
   process.env.GOOGLE_CALLBACK_URL ||
@@ -44,6 +47,12 @@ const resolveMongoDbName = () => {
 };
 const mongoDbName = resolveMongoDbName();
 const allowedEmailDomain = "gmail.com";
+const accountSecretSource =
+  process.env.ACCOUNT_SECRET_KEY || process.env.SESSION_SECRET || "dev-secret";
+const accountSecretKey = crypto
+  .createHash("sha256")
+  .update(accountSecretSource)
+  .digest();
 
 let mongoClient;
 let usersCollection;
@@ -130,9 +139,19 @@ const serializeAccount = (account) => ({
   name: account.name,
   cloudName: account.cloudName,
   apiKey: account.apiKey,
-  apiSecret: account.apiSecret,
+  apiSecretConfigured: Boolean(account.apiSecret),
   libraries: account.libraries || [],
 });
+
+const encryptSecret = (value) => {
+  if (!value) return "";
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", accountSecretKey, iv);
+  let encrypted = cipher.update(value, "utf8", "base64");
+  encrypted += cipher.final("base64");
+  const tag = cipher.getAuthTag().toString("base64");
+  return `${iv.toString("base64")}:${tag}:${encrypted}`;
+};
 
 passport.use(
   new GoogleStrategy(
@@ -299,7 +318,7 @@ app.post("/api/accounts", ensureAuthenticated, async (req, res, next) => {
       name,
       cloudName,
       apiKey,
-      apiSecret: apiSecret || "",
+      apiSecret: encryptSecret(apiSecret),
       libraries: [],
       createdAt: now,
       updatedAt: now,
@@ -336,7 +355,7 @@ app.put("/api/accounts/:id", ensureAuthenticated, async (req, res, next) => {
     if (name) update.name = name;
     if (cloudName) update.cloudName = cloudName;
     if (apiKey) update.apiKey = apiKey;
-    if (apiSecret !== undefined) update.apiSecret = apiSecret;
+    if (apiSecret !== undefined) update.apiSecret = encryptSecret(apiSecret);
 
     const result = await accounts.findOneAndUpdate(
       { _id: accountId, userId: req.user.id },
