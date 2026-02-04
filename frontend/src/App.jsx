@@ -412,12 +412,31 @@ export default function App() {
       }
 
       if (!response.ok) {
+        let payload;
+        try {
+          payload = await response.json();
+        } catch (error) {
+          payload = null;
+        }
+
         if (response.status === 409) {
-          const payload = await response.json();
           throw new Error(
-            `No hay suficientes imágenes sin tag reel. Disponibles: ${payload.available ?? 0}.`
+            `No hay suficientes imágenes sin tag reel. Disponibles: ${payload?.available ?? 0}.`
           );
         }
+
+        if (response.status === 400) {
+          const messageByError = {
+            "cloudinary-credentials-missing":
+              "Faltan las credenciales de Cloudinary para esta cuenta.",
+            "invalid-count": "Ingresa un número válido de imágenes.",
+            "invalid-account": "La cuenta seleccionada no es válida.",
+          };
+          throw new Error(
+            messageByError[payload?.error] || "No se pudo generar el reel."
+          );
+        }
+
         throw new Error("No se pudo generar el reel.");
       }
 
