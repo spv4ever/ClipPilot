@@ -459,11 +459,52 @@ input {
   gap: 0.45rem;
 }
 
-.reel-generator-controls .hint {
-  display: block;
-  margin-top: 0.35rem;
+.reel-generator-controls .label-with-tooltip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+
+.reel-generator-controls .tooltip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #0f172a;
+  background: rgba(148, 163, 184, 0.9);
+  cursor: help;
+}
+
+.reel-generator-controls .tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 0.45rem);
+  right: 0;
+  transform: translateY(-4px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  background: rgba(15, 23, 42, 0.95);
+  color: #f8fafc;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.6rem;
+  border: 1px solid rgba(148, 163, 184, 0.3);
   font-size: 0.75rem;
-  color: rgba(148, 163, 184, 0.8);
+  white-space: nowrap;
+  z-index: 2;
+  box-shadow: 0 12px 25px rgba(15, 23, 42, 0.25);
+}
+
+.reel-generator-controls .tooltip:hover::after,
+.reel-generator-controls .tooltip:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .reel-generator-controls button {
