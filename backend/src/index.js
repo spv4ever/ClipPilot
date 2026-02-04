@@ -947,10 +947,15 @@ app.post(
 
 app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) => {
   try {
+    const logStep = (step, details = {}) => {
+      console.info("[reel]", step, details);
+    };
+    logStep("start", { accountId: req.params.id, count: req.body?.count });
     const accounts = await getAccountsCollection();
     const reels = await getReelsCollection();
     if (!accounts || !reels) {
-      return res.status(503).json({ error: "storage-unavailable" });
+      logStep("storage-unavailable");
+      return res.status(503).json({ error: "storage-unavailable", step: "storage" });
     }
 
     const { id } = req.params;
@@ -958,24 +963,31 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
     try {
       accountId = new ObjectId(id);
     } catch (err) {
-      return res.status(400).json({ error: "invalid-account" });
+      logStep("invalid-account");
+      return res.status(400).json({ error: "invalid-account", step: "account" });
     }
 
     const account = await accounts.findOne({ _id: accountId, userId: req.user.id });
     if (!account) {
-      return res.status(404).json({ error: "account-not-found" });
+      logStep("account-not-found", { accountId: accountId.toString() });
+      return res.status(404).json({ error: "account-not-found", step: "account" });
     }
 
     const requestedCount = Number(req.body?.count) || 0;
     if (requestedCount <= 0) {
-      return res.status(400).json({ error: "invalid-count" });
+      logStep("invalid-count", { requestedCount });
+      return res.status(400).json({ error: "invalid-count", step: "input" });
     }
 
     const apiSecret = decryptSecret(account.apiSecret);
     if (!account.cloudName || !account.apiKey || !apiSecret) {
-      return res.status(400).json({ error: "cloudinary-credentials-missing" });
+      logStep("cloudinary-credentials-missing");
+      return res
+        .status(400)
+        .json({ error: "cloudinary-credentials-missing", step: "credentials" });
     }
 
+    logStep("fetch-images", { requestedCount });
     const availableImages = await fetchCloudinaryImages({
       account,
       apiSecret,
@@ -984,8 +996,10 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
     });
 
     if (availableImages.length < requestedCount) {
+      logStep("not-enough-images", { available: availableImages.length });
       return res.status(409).json({
         error: "not-enough-images",
+        step: "images",
         available: availableImages.length,
       });
     }
@@ -998,6 +1012,7 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
         url: resource.url,
       }));
 
+    logStep("build-transformation", { selectedCount: selected.length });
     const transformation = buildReelTransformation(selected);
     const timestamp = Math.floor(Date.now() / 1000);
     const publicId = `reel_${Date.now()}`;
@@ -1021,6 +1036,7 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
     uploadParams.append("signature", signature);
 
     const uploadUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/video/upload`;
+    logStep("upload-start", { uploadUrl, publicId });
     const uploadResponse = await fetch(uploadUrl, {
       method: "POST",
       headers: {
@@ -1031,8 +1047,10 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
 
     if (!uploadResponse.ok) {
       const errorBody = await uploadResponse.text();
+      logStep("upload-failed", { status: uploadResponse.status });
       return res.status(uploadResponse.status).json({
         error: "cloudinary-upload-failed",
+        step: "upload",
         details: errorBody || null,
       });
     }
@@ -1051,7 +1069,9 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
       imageCount: selected.length,
     };
 
+    logStep("persist-reel", { publicId: reelDoc.publicId });
     await reels.insertOne(reelDoc);
+    logStep("tag-images", { count: selected.length });
     await updateCloudinaryTags({
       account,
       apiSecret,
@@ -1060,6 +1080,7 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
       tag: "reel",
     });
 
+    logStep("complete", { publicId: reelDoc.publicId });
     return res.status(201).json({
       reel: reelDoc,
       images: selected,
