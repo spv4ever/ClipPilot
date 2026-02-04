@@ -31,6 +31,7 @@ export default function App() {
   const [loginError, setLoginError] = useState("");
   const [view, setView] = useState("home");
   const [accounts, setAccounts] = useState([]);
+  const [accountsStatus, setAccountsStatus] = useState("idle");
   const [draft, setDraft] = useState(emptyAccountDraft);
   const [editingId, setEditingId] = useState(null);
   const [selectedAccount, setSelectedAccount] = useState(null);
@@ -65,12 +66,14 @@ export default function App() {
 
   const loadAccounts = async () => {
     try {
+      setAccountsStatus("loading");
       const response = await fetch(`${backendUrl}/api/accounts`, {
         credentials: "include",
       });
 
       if (handleUnauthorized(response)) {
         setAccounts([]);
+        setAccountsStatus("error");
         return;
       }
 
@@ -80,9 +83,11 @@ export default function App() {
 
       const payload = await response.json();
       setAccounts(payload.accounts || []);
+      setAccountsStatus("success");
     } catch (err) {
       console.error(err);
       setError("No se pudieron cargar las cuentas guardadas.");
+      setAccountsStatus("error");
     }
   };
 
@@ -250,6 +255,9 @@ export default function App() {
     if (!isAuthenticated) {
       return;
     }
+    if (accountsStatus === "loading" || accountsStatus === "idle") {
+      return;
+    }
     const storedView = localStorage.getItem(storageKeys.view) || "home";
     const storedAccountId = localStorage.getItem(storageKeys.accountId);
     if (storedView === "account-images" && storedAccountId) {
@@ -274,7 +282,7 @@ export default function App() {
       setView("home");
     }
     hasRestoredView.current = true;
-  }, [accounts, isAuthenticated]);
+  }, [accounts, accountsStatus, isAuthenticated]);
 
   const handleLogout = async () => {
     try {
