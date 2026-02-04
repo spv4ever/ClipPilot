@@ -704,10 +704,6 @@ app.post(
       if (!account.cloudName || !account.apiKey || !apiSecret) {
         return res.status(400).json({ error: "cloudinary-credentials-missing" });
       }
-      const authHeader = Buffer.from(`${account.apiKey}:${apiSecret}`).toString(
-        "base64"
-      );
-
       const baseUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/image/tags`;
       const tagParams = new URLSearchParams();
       const deliveryType =
@@ -778,24 +774,44 @@ app.post(
         });
       }
 
-      const contextUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/resources/image/context`;
+      const contextUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/image/context`;
       const contextParams = new URLSearchParams();
+      const contextCommand = "add";
+      const timestamp2 = Math.floor(Date.now() / 1000);
+      const contextValue = `reel=${parsedEnabled === true ? "true" : "false"}`;
+      const contextSignatureParams = {
+        command: contextCommand,
+        context: contextValue,
+        timestamp: timestamp2,
+        type: deliveryType,
+        public_ids: publicId,
+      };
+      const contextSignature = crypto
+        .createHash("sha1")
+        .update(
+          Object.entries(contextSignatureParams)
+            .filter(([, value]) => value !== undefined && value !== null)
+            .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+            .map(([key, value]) => `${key}=${value}`)
+            .join("&") + apiSecret
+        )
+        .digest("hex");
+
+      contextParams.append("command", contextCommand);
+      contextParams.append("context", contextValue);
       contextParams.append("public_ids[]", publicId);
       contextParams.append("type", deliveryType);
-      contextParams.append(
-        "context",
-        `reel=${parsedEnabled === true ? "true" : "false"}`
-      );
+      contextParams.append("timestamp", String(timestamp2));
+      contextParams.append("api_key", account.apiKey);
+      contextParams.append("signature", contextSignature);
       console.info("[reel] context update request", {
+        method: "POST",
         url: contextUrl,
         body: contextParams.toString(),
       });
       const contextResponse = await fetch(contextUrl, {
         method: "POST",
-        headers: {
-          Authorization: `Basic ${authHeader}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: contextParams.toString(),
       });
       console.info("[reel] context update response", {
