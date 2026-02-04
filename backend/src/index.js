@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import crypto from "crypto";
+import { Blob } from "buffer";
 import { promises as fs } from "fs";
 import fsSync from "fs";
 import { MongoClient, ObjectId } from "mongodb";
@@ -1139,12 +1140,10 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
       await renderReelVideo({ images: selected, outputPath: tempOutputPath });
       logStep("render-local-complete", { publicId });
 
+      const videoBuffer = await fs.readFile(tempOutputPath);
+      const videoBlob = new Blob([videoBuffer], { type: "video/mp4" });
       const uploadParams = new FormData();
-      uploadParams.append(
-        "file",
-        fsSync.createReadStream(tempOutputPath),
-        `${publicId}.mp4`
-      );
+      uploadParams.append("file", videoBlob, `${publicId}.mp4`);
       uploadParams.append("api_key", account.apiKey);
       uploadParams.append("timestamp", String(timestamp));
       uploadParams.append("public_id", publicId);
