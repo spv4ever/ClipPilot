@@ -390,8 +390,10 @@ const renderReelVideo = async ({
     }
 
     const safeZoomAmount = Math.max(0.01, Math.min(0.3, zoomAmount));
-    const safeTransition = Math.max(0, Math.min(2, transitionSeconds));
     const safeDuration = Math.max(0.5, durationSeconds);
+    const safeTransition = Math.max(0, Math.min(2, transitionSeconds, safeDuration));
+    const fadeDuration = Math.min(Math.max(0.1, safeTransition || 0.5), safeDuration / 2);
+    const totalDuration = safeDuration * imagePaths.length;
 
     const inputArgs = [];
     const filterParts = [];
@@ -403,16 +405,15 @@ const renderReelVideo = async ({
       const endZoom = zoomIn ? 1 + safeZoomAmount : 1;
       const step =
         frameCount > 1 ? (endZoom - startZoom) / (frameCount - 1) : 0;
-      const stepExpr = `${step >= 0 ? "+" : ""}${step.toFixed(6)}`;
+      const stepExpr = `${step >= 0 ? "+" : ""}${step.toFixed(8)}`;
       return {
-        startZoom: startZoom.toFixed(6),
+        startZoom: startZoom.toFixed(8),
         stepExpr,
       };
     };
 
     imagePaths.forEach((imagePath, index) => {
-      const isLast = index === imagePaths.length - 1;
-      const seconds = isLast ? safeDuration : safeDuration + safeTransition;
+      const seconds = safeDuration;
       inputArgs.push("-loop", "1", "-t", String(seconds), "-i", imagePath);
       const frameCount = Math.max(1, Math.round(seconds * fps));
       const { startZoom, stepExpr } = buildZoomExpression(frameCount);
@@ -426,10 +427,11 @@ const renderReelVideo = async ({
         `s=${width}x${height}`,
         `fps=${fps}`,
       ].join(":");
-      filterParts.push(
+      const baseTransform =
         `${inputLabel}scale=${width}:${height}:force_original_aspect_ratio=decrease,` +
-          `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,${zoompan}${outputLabel}`
-      );
+        `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,${zoompan}`;
+      const fadeIn = index === 0 ? `,fade=t=in:st=0:d=${fadeDuration}` : "";
+      filterParts.push(`${baseTransform}${fadeIn}${outputLabel}`);
       streamLabels.push(outputLabel);
     });
 
@@ -437,14 +439,17 @@ const renderReelVideo = async ({
     for (let index = 1; index < streamLabels.length; index += 1) {
       const nextLabel = streamLabels[index];
       const outputLabel = `[xf${index}]`;
-      const offset = (safeDuration * index).toFixed(3);
+      const offset = Math.max(0, safeDuration * index - safeTransition).toFixed(3);
       filterParts.push(
         `${currentLabel}${nextLabel}xfade=transition=fade:duration=${safeTransition}:offset=${offset}${outputLabel}`
       );
       currentLabel = outputLabel;
     }
 
-    filterParts.push(`${currentLabel}format=yuv420p[video]`);
+    const fadeOutStart = Math.max(0, totalDuration - fadeDuration).toFixed(3);
+    filterParts.push(
+      `${currentLabel}fade=t=out:st=${fadeOutStart}:d=${fadeDuration},format=yuv420p[video]`
+    );
 
     const filterComplex = filterParts.join(";");
 
