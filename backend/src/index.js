@@ -543,6 +543,8 @@ app.get("/api/images", ensureAuthenticated, async (req, res, next) => {
     apiUrl.searchParams.set("max_results", "5");
     apiUrl.searchParams.set("direction", "desc");
     apiUrl.searchParams.set("tags", "true");
+    apiUrl.searchParams.set("context", "true");
+    apiUrl.searchParams.set("metadata", "true");
 
     const response = await fetch(apiUrl, {
       headers: {
@@ -566,7 +568,14 @@ app.get("/api/images", ensureAuthenticated, async (req, res, next) => {
       createdAt: resource.created_at,
       type: resource.type || "upload",
       tags: Array.isArray(resource.tags) ? resource.tags : [],
-      isReel: Array.isArray(resource.tags) ? resource.tags.includes("reel") : false,
+      context: resource.context || null,
+      metadata: resource.metadata || null,
+      isReel:
+        (Array.isArray(resource.tags) && resource.tags.includes("reel")) ||
+        resource.metadata?.reel === true ||
+        resource.metadata?.reel === "true" ||
+        resource.context?.custom?.reel === true ||
+        resource.context?.custom?.reel === "true",
     }));
 
     return res.json({ images });
@@ -610,6 +619,8 @@ app.get("/api/accounts/:id/images", ensureAuthenticated, async (req, res, next) 
     apiUrl.searchParams.set("max_results", limit.toString());
     apiUrl.searchParams.set("direction", "desc");
     apiUrl.searchParams.set("tags", "true");
+    apiUrl.searchParams.set("context", "true");
+    apiUrl.searchParams.set("metadata", "true");
     if (req.query.cursor) {
       apiUrl.searchParams.set("next_cursor", req.query.cursor.toString());
     }
@@ -636,7 +647,14 @@ app.get("/api/accounts/:id/images", ensureAuthenticated, async (req, res, next) 
       createdAt: resource.created_at,
       type: resource.type || "upload",
       tags: Array.isArray(resource.tags) ? resource.tags : [],
-      isReel: Array.isArray(resource.tags) ? resource.tags.includes("reel") : false,
+      context: resource.context || null,
+      metadata: resource.metadata || null,
+      isReel:
+        (Array.isArray(resource.tags) && resource.tags.includes("reel")) ||
+        resource.metadata?.reel === true ||
+        resource.metadata?.reel === "true" ||
+        resource.context?.custom?.reel === true ||
+        resource.context?.custom?.reel === "true",
     }));
 
     return res.json({ images, nextCursor: result.next_cursor || null });
@@ -719,6 +737,31 @@ app.post(
         const errorBody = await response.text();
         return res.status(response.status).json({
           error: "cloudinary-update-failed",
+          details: errorBody || null,
+        });
+      }
+
+      const contextUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/resources/image/context`;
+      const contextParams = new URLSearchParams();
+      contextParams.append("public_ids[]", publicId);
+      contextParams.append("type", deliveryType);
+      contextParams.append(
+        "context",
+        `reel=${parsedEnabled === true ? "true" : "false"}`
+      );
+      const contextResponse = await fetch(contextUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${authHeader}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: contextParams.toString(),
+      });
+
+      if (!contextResponse.ok) {
+        const errorBody = await contextResponse.text();
+        return res.status(contextResponse.status).json({
+          error: "cloudinary-metadata-update-failed",
           details: errorBody || null,
         });
       }
