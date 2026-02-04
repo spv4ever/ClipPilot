@@ -393,7 +393,11 @@ const renderReelVideo = async ({
     const safeDuration = Math.max(0.5, durationSeconds);
     const safeTransition = Math.max(0, Math.min(2, transitionSeconds, safeDuration));
     const fadeDuration = Math.min(Math.max(0.1, safeTransition || 0.5), safeDuration / 2);
-    const totalDuration = safeDuration * imagePaths.length;
+    const effectiveClipDuration = Math.max(0, safeDuration - safeTransition);
+    const totalDuration =
+      imagePaths.length > 0
+        ? safeDuration + effectiveClipDuration * (imagePaths.length - 1)
+        : 0;
 
     const inputArgs = [];
     const filterParts = [];
@@ -439,7 +443,7 @@ const renderReelVideo = async ({
     for (let index = 1; index < streamLabels.length; index += 1) {
       const nextLabel = streamLabels[index];
       const outputLabel = `[xf${index}]`;
-      const offset = Math.max(0, safeDuration * index - safeTransition).toFixed(3);
+      const offset = Math.max(0, effectiveClipDuration * index).toFixed(3);
       filterParts.push(
         `${currentLabel}${nextLabel}xfade=transition=fade:duration=${safeTransition}:offset=${offset}${outputLabel}`
       );
