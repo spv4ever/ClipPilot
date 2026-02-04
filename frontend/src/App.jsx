@@ -46,6 +46,12 @@ export default function App() {
   const [imageCounts, setImageCounts] = useState({});
   const [imageCountsStatus, setImageCountsStatus] = useState("idle");
   const [reelUpdating, setReelUpdating] = useState({});
+  const [reelCount, setReelCount] = useState(5);
+  const [reelCreateStatus, setReelCreateStatus] = useState("idle");
+  const [reelCreateError, setReelCreateError] = useState("");
+  const [reels, setReels] = useState([]);
+  const [reelsStatus, setReelsStatus] = useState("idle");
+  const [reelsError, setReelsError] = useState("");
   const hasRestoredView = useRef(false);
 
   const displayName = useMemo(() => user?.displayName || "", [user]);
@@ -182,6 +188,33 @@ export default function App() {
     }
   };
 
+  const loadReels = async () => {
+    try {
+      setReelsStatus("loading");
+      setReelsError("");
+      const response = await fetch(`${backendUrl}/api/reels`, {
+        credentials: "include",
+      });
+
+      if (handleUnauthorized(response)) {
+        setReels([]);
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error("No se pudieron cargar los reels.");
+      }
+
+      const payload = await response.json();
+      setReels(payload.reels || []);
+      setReelsStatus("success");
+    } catch (err) {
+      console.error(err);
+      setReelsError("No se pudieron cargar los reels.");
+      setReelsStatus("error");
+    }
+  };
+
   const fetchMe = async () => {
     try {
       setStatus("checking");
@@ -279,6 +312,9 @@ export default function App() {
     }
     if (storedView === "cloudinary") {
       setView("cloudinary");
+    } else if (storedView === "reels") {
+      setView("reels");
+      loadReels();
     } else {
       setView("home");
     }
@@ -346,6 +382,66 @@ export default function App() {
   const handleRefreshImages = () => {
     if (!selectedAccount) return;
     loadImages({ accountId: selectedAccount.id, cursor: currentCursor });
+  };
+
+  const handleGenerateReel = async () => {
+    if (!selectedAccount) return;
+    const count = Number(reelCount);
+    if (!Number.isFinite(count) || count <= 0) {
+      setReelCreateError("Ingresa un número válido de imágenes.");
+      return;
+    }
+
+    try {
+      setReelCreateStatus("loading");
+      setReelCreateError("");
+      const response = await fetch(
+        `${backendUrl}/api/accounts/${selectedAccount.id}/reels`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ count }),
+        }
+      );
+
+      if (handleUnauthorized(response)) {
+        return;
+      }
+
+      if (!response.ok) {
+        if (response.status === 409) {
+          const payload = await response.json();
+          throw new Error(
+            `No hay suficientes imágenes sin tag reel. Disponibles: ${payload.available ?? 0}.`
+          );
+        }
+        throw new Error("No se pudo generar el reel.");
+      }
+
+      const payload = await response.json();
+      setAccountImages((prev) =>
+        prev.map((image) =>
+          payload.images.some((item) => item.publicId === image.publicId)
+            ? {
+                ...image,
+                isReel: true,
+                tags: Array.from(new Set([...(image.tags || []), "reel"])),
+              }
+            : image
+        )
+      );
+      setReels((prev) => [payload.reel, ...prev]);
+      setReelCreateStatus("success");
+    } catch (err) {
+      console.error(err);
+      setReelCreateError(err.message || "No se pudo generar el reel.");
+      setReelCreateStatus("error");
+    } finally {
+      setReelCreateStatus("idle");
+    }
   };
 
   const handleDraftChange = (field) => (event) => {
@@ -496,7 +592,7 @@ export default function App() {
         </div>
         <div className="topbar-actions">
           {isAuthenticated ? (
-            <button className="user-pill" onClick={() => setView("cloudinary")}> 
+            <button className="user-pill" onClick={() => setView("cloudinary")}>
               {user.photos?.[0]?.value && (
                 <img src={user.photos[0].value} alt={displayName} />
               )}
@@ -511,9 +607,20 @@ export default function App() {
             </a>
           )}
           {isAuthenticated && (
-            <button className="secondary" onClick={handleLogout}>
-              Cerrar sesión
-            </button>
+            <>
+              <button
+                className="secondary"
+                onClick={() => {
+                  setView("reels");
+                  loadReels();
+                }}
+              >
+                Ver reels
+              </button>
+              <button className="secondary" onClick={handleLogout}>
+                Cerrar sesión
+              </button>
+            </>
           )}
         </div>
       </header>
@@ -529,6 +636,18 @@ export default function App() {
             <p className="subtitle">
               Gestiona tus cuentas de Cloudinary y mantén tus credenciales seguras.
             </p>
+            {isAuthenticated && (
+              <button
+                className="primary"
+                type="button"
+                onClick={() => {
+                  setView("reels");
+                  loadReels();
+                }}
+              >
+                Ver reels creados
+              </button>
+            )}
           </div>
           {accounts.length === 0 ? (
             <div className="empty-state">
@@ -733,6 +852,48 @@ export default function App() {
             </button>
           </header>
 
+          <section className="card reel-generator">
+            <header className="list-header">
+              <div>
+                <h2>Generar reel</h2>
+                <p className="subtitle">
+                  Seleccionaremos imágenes aleatorias sin tag reel y crearemos un
+                  video con zoom alternado.
+                </p>
+              </div>
+              <button
+                className="secondary"
+                type="button"
+                onClick={() => {
+                  setView("reels");
+                  loadReels();
+                }}
+              >
+                Ver reels creados
+              </button>
+            </header>
+            <div className="reel-generator-controls">
+              <label>
+                Cantidad de imágenes
+                <input
+                  type="number"
+                  min="1"
+                  value={reelCount}
+                  onChange={(event) => setReelCount(event.target.value)}
+                />
+              </label>
+              <button
+                className="primary"
+                type="button"
+                onClick={handleGenerateReel}
+                disabled={reelCreateStatus === "loading"}
+              >
+                {reelCreateStatus === "loading" ? "Generando..." : "Generar reel"}
+              </button>
+            </div>
+            {reelCreateError && <p className="error">{reelCreateError}</p>}
+          </section>
+
           <section className="card">
             <header className="list-header">
               <div>
@@ -841,6 +1002,71 @@ export default function App() {
                   ? "No hay imágenes en este filtro."
                   : "No se encontraron imágenes para esta cuenta."}
               </p>
+            )}
+          </section>
+        </main>
+      )}
+
+      {view === "reels" && (
+        <main className="library-view">
+          <header className="library-view-header">
+            <div>
+              <p className="eyebrow">Reels generados</p>
+              <h1>Reels en Cloudinary</h1>
+              <p className="subtitle">
+                Revisa los reels creados con tus imágenes.
+              </p>
+            </div>
+            <button className="secondary" onClick={() => setView("home")}>
+              Volver a inicio
+            </button>
+          </header>
+
+          <section className="card">
+            <header className="list-header">
+              <div>
+                <h2>Listado de reels</h2>
+                <p className="subtitle">
+                  {reels.length
+                    ? `${reels.length} reels disponibles`
+                    : "Aún no hay reels creados."}
+                </p>
+              </div>
+              <button
+                className="secondary"
+                type="button"
+                onClick={loadReels}
+                disabled={reelsStatus === "loading"}
+              >
+                Refrescar
+              </button>
+            </header>
+            {reelsError && <p className="error">{reelsError}</p>}
+            {reelsStatus === "loading" && <p className="muted">Cargando reels...</p>}
+            {reels.length > 0 ? (
+              <div className="reel-grid">
+                {reels.map((reel) => (
+                  <article className="reel-card" key={reel.id || reel.publicId}>
+                    <video
+                      src={reel.secureUrl || reel.url}
+                      controls
+                      preload="metadata"
+                    />
+                    <div className="reel-meta">
+                      <p className="subtitle">
+                        Cuenta: {reel.accountName || reel.accountId}
+                      </p>
+                      <p className="muted">
+                        Imágenes: {reel.imageCount ?? "N/A"}
+                      </p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              reelsStatus !== "loading" && (
+                <p className="empty">No hay reels creados todavía.</p>
+              )
             )}
           </section>
         </main>

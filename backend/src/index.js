@@ -57,6 +57,7 @@ const accountSecretKey = crypto
 let mongoClient;
 let usersCollection;
 let accountsCollection;
+let reelsCollection;
 
 app.use(
   cors({
@@ -126,6 +127,21 @@ const getAccountsCollection = async () => {
   return accountsCollection;
 };
 
+const getReelsCollection = async () => {
+  if (reelsCollection) {
+    return reelsCollection;
+  }
+
+  const client = await getMongoClient();
+  if (!client) {
+    return null;
+  }
+
+  const db = client.db(mongoDbName);
+  reelsCollection = db.collection("reels");
+  return reelsCollection;
+};
+
 const ensureAuthenticated = (req, res, next) => {
   if (req.isAuthenticated && req.isAuthenticated()) {
     return next();
@@ -171,6 +187,130 @@ const decryptSecret = (value) => {
   } catch (error) {
     return "";
   }
+};
+
+const fetchCloudinaryImages = async ({
+  account,
+  apiSecret,
+  maxResults = 100,
+  expression = "resource_type:image",
+}) => {
+  const authHeader = Buffer.from(`${account.apiKey}:${apiSecret}`).toString(
+    "base64"
+  );
+  const apiUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/resources/search`;
+  const response = await fetch(apiUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${authHeader}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      expression,
+      max_results: maxResults,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`cloudinary-search-failed:${response.status}:${errorBody}`);
+  }
+
+  const result = await response.json();
+  return result.resources || [];
+};
+
+const updateCloudinaryTags = async ({
+  account,
+  apiSecret,
+  publicIds,
+  command,
+  tag,
+}) => {
+  if (!publicIds.length) return;
+  const timestamp = Math.floor(Date.now() / 1000);
+  const signatureParams = {
+    command,
+    tag,
+    timestamp,
+    public_ids: publicIds.join(","),
+    type: "upload",
+  };
+  const signature = buildCloudinarySignature(signatureParams, apiSecret);
+  const tagParams = new URLSearchParams();
+  tagParams.append("command", command);
+  tagParams.append("tag", tag);
+  publicIds.forEach((publicId) => tagParams.append("public_ids[]", publicId));
+  tagParams.append("type", "upload");
+  tagParams.append("timestamp", String(timestamp));
+  tagParams.append("api_key", account.apiKey);
+  tagParams.append("signature", signature);
+
+  const apiUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/image/tags`;
+  const response = await fetch(apiUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: tagParams.toString(),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`cloudinary-tag-failed:${response.status}:${errorBody}`);
+  }
+};
+
+const buildCloudinarySignature = (params, apiSecret) =>
+  crypto
+    .createHash("sha1")
+    .update(
+      Object.entries(params)
+        .filter(([, value]) => value !== undefined && value !== null)
+        .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+        .map(([key, value]) => `${key}=${value}`)
+        .join("&") + apiSecret
+    )
+    .digest("hex");
+
+const formatOverlayPublicId = (publicId) => publicId.replace(/\//g, ":");
+
+const buildReelTransformation = (images) => {
+  const durationSeconds = 3;
+  const fps = 30;
+  const frames = durationSeconds * fps;
+
+  const baseTransform = (publicId, index, isSplice) => {
+    const zoom = index % 2 === 0 ? 1.1 : 0.9;
+    const parts = [
+      "w_1080",
+      "h_1920",
+      "c_fit",
+      "b_black",
+      `e_zoompan:mode_ofp;zoom_${zoom};d_${frames};fps_${fps}`,
+      `du_${durationSeconds}`,
+    ];
+
+    if (isSplice) {
+      const overlayId = formatOverlayPublicId(publicId);
+      return [`fl_splice`, `l_image:${overlayId}`, ...parts].join(",");
+    }
+
+    return parts.join(",");
+  };
+
+  return images
+    .map((image, index) => baseTransform(image.publicId, index, index !== 0))
+    .join("/");
+};
+
+const shuffleArray = (values) => {
+  const array = [...values];
+  for (let i = array.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
 };
 
 passport.use(
@@ -724,16 +864,7 @@ app.post(
         type: deliveryType,
         public_ids: publicId,
       };
-      const signature = crypto
-        .createHash("sha1")
-        .update(
-          Object.entries(signatureParams)
-            .filter(([, value]) => value !== undefined && value !== null)
-            .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
-            .map(([key, value]) => `${key}=${value}`)
-            .join("&") + apiSecret
-        )
-        .digest("hex");
+      const signature = buildCloudinarySignature(signatureParams, apiSecret);
 
       tagParams.append("command", command);
       tagParams.append("tag", "reel");
@@ -777,16 +908,10 @@ app.post(
         type: deliveryType,
         public_ids: publicId,
       };
-      const contextSignature = crypto
-        .createHash("sha1")
-        .update(
-          Object.entries(contextSignatureParams)
-            .filter(([, value]) => value !== undefined && value !== null)
-            .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
-            .map(([key, value]) => `${key}=${value}`)
-            .join("&") + apiSecret
-        )
-        .digest("hex");
+      const contextSignature = buildCloudinarySignature(
+        contextSignatureParams,
+        apiSecret
+      );
 
       contextParams.append("command", contextCommand);
       contextParams.append("context", contextValue);
@@ -819,6 +944,159 @@ app.post(
     }
   }
 );
+
+app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) => {
+  try {
+    const accounts = await getAccountsCollection();
+    const reels = await getReelsCollection();
+    if (!accounts || !reels) {
+      return res.status(503).json({ error: "storage-unavailable" });
+    }
+
+    const { id } = req.params;
+    let accountId;
+    try {
+      accountId = new ObjectId(id);
+    } catch (err) {
+      return res.status(400).json({ error: "invalid-account" });
+    }
+
+    const account = await accounts.findOne({ _id: accountId, userId: req.user.id });
+    if (!account) {
+      return res.status(404).json({ error: "account-not-found" });
+    }
+
+    const requestedCount = Number(req.body?.count) || 0;
+    if (requestedCount <= 0) {
+      return res.status(400).json({ error: "invalid-count" });
+    }
+
+    const apiSecret = decryptSecret(account.apiSecret);
+    if (!account.cloudName || !account.apiKey || !apiSecret) {
+      return res.status(400).json({ error: "cloudinary-credentials-missing" });
+    }
+
+    const availableImages = await fetchCloudinaryImages({
+      account,
+      apiSecret,
+      maxResults: Math.max(50, requestedCount * 3),
+      expression: "resource_type:image AND -tags=reel",
+    });
+
+    if (availableImages.length < requestedCount) {
+      return res.status(409).json({
+        error: "not-enough-images",
+        available: availableImages.length,
+      });
+    }
+
+    const selected = shuffleArray(availableImages)
+      .slice(0, requestedCount)
+      .map((resource) => ({
+        publicId: resource.public_id,
+        secureUrl: resource.secure_url,
+        url: resource.url,
+      }));
+
+    const transformation = buildReelTransformation(selected);
+    const timestamp = Math.floor(Date.now() / 1000);
+    const publicId = `reel_${Date.now()}`;
+    const folder = "reels";
+    const signatureParams = {
+      folder,
+      public_id: publicId,
+      timestamp,
+      transformation,
+    };
+    const signature = buildCloudinarySignature(signatureParams, apiSecret);
+
+    const uploadParams = new URLSearchParams();
+    uploadParams.append("file", selected[0].secureUrl || selected[0].url);
+    uploadParams.append("api_key", account.apiKey);
+    uploadParams.append("timestamp", String(timestamp));
+    uploadParams.append("public_id", publicId);
+    uploadParams.append("folder", folder);
+    uploadParams.append("resource_type", "video");
+    uploadParams.append("transformation", transformation);
+    uploadParams.append("signature", signature);
+
+    const uploadUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/video/upload`;
+    const uploadResponse = await fetch(uploadUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: uploadParams.toString(),
+    });
+
+    if (!uploadResponse.ok) {
+      const errorBody = await uploadResponse.text();
+      return res.status(uploadResponse.status).json({
+        error: "cloudinary-upload-failed",
+        details: errorBody || null,
+      });
+    }
+
+    const uploadResult = await uploadResponse.json();
+    const now = new Date();
+    const reelDoc = {
+      userId: req.user.id,
+      accountId: accountId.toString(),
+      accountName: account.name,
+      publicId: uploadResult.public_id || publicId,
+      url: uploadResult.url,
+      secureUrl: uploadResult.secure_url,
+      createdAt: now,
+      imagePublicIds: selected.map((item) => item.publicId),
+      imageCount: selected.length,
+    };
+
+    await reels.insertOne(reelDoc);
+    await updateCloudinaryTags({
+      account,
+      apiSecret,
+      publicIds: selected.map((item) => item.publicId),
+      command: "add",
+      tag: "reel",
+    });
+
+    return res.status(201).json({
+      reel: reelDoc,
+      images: selected,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get("/api/reels", ensureAuthenticated, async (req, res, next) => {
+  try {
+    const reels = await getReelsCollection();
+    if (!reels) {
+      return res.status(503).json({ error: "storage-unavailable" });
+    }
+
+    const items = await reels
+      .find({ userId: req.user.id })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    return res.json({
+      reels: items.map((reel) => ({
+        id: reel._id.toString(),
+        accountId: reel.accountId,
+        accountName: reel.accountName,
+        publicId: reel.publicId,
+        url: reel.url,
+        secureUrl: reel.secureUrl,
+        createdAt: reel.createdAt,
+        imageCount: reel.imageCount,
+      })),
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
 
 app.get(
   "/api/accounts/:id/images/count",
