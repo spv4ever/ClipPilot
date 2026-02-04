@@ -47,7 +47,7 @@ export default function App() {
   const [imageCountsStatus, setImageCountsStatus] = useState("idle");
   const [reelUpdating, setReelUpdating] = useState({});
   const [finalUpdating, setFinalUpdating] = useState({});
-  const [reelCount, setReelCount] = useState(5);
+  const [selectedReelImages, setSelectedReelImages] = useState([]);
   const [reelSecondsPerImage, setReelSecondsPerImage] = useState(2);
   const [reelZoomAmount, setReelZoomAmount] = useState(0.05);
   const [reelCreateStatus, setReelCreateStatus] = useState("idle");
@@ -59,6 +59,10 @@ export default function App() {
 
   const displayName = useMemo(() => user?.displayName || "", [user]);
   const userRole = useMemo(() => user?.role || "free", [user]);
+  const selectedReelIds = useMemo(
+    () => new Set(selectedReelImages.map((image) => image.publicId)),
+    [selectedReelImages]
+  );
 
   const isAuthenticated = status === "authenticated" && user;
 
@@ -324,6 +328,47 @@ export default function App() {
     hasRestoredView.current = true;
   }, [accounts, accountsStatus, isAuthenticated]);
 
+  useEffect(() => {
+    if (!selectedReelImages.length) {
+      return;
+    }
+    setSelectedReelImages((prev) => {
+      let changed = false;
+      const next = prev.map((item) => {
+        const updated = accountImages.find(
+          (image) => image.publicId === item.publicId
+        );
+        if (!updated) {
+          return item;
+        }
+        if (updated.isFinal !== item.isFinal) {
+          changed = true;
+          return { ...item, isFinal: updated.isFinal };
+        }
+        return item;
+      });
+      return changed ? next : prev;
+    });
+  }, [accountImages, selectedReelImages.length]);
+
+  const handleToggleReelSelection = (image) => {
+    setSelectedReelImages((prev) => {
+      const exists = prev.some((item) => item.publicId === image.publicId);
+      if (exists) {
+        return prev.filter((item) => item.publicId !== image.publicId);
+      }
+      return [
+        ...prev,
+        {
+          publicId: image.publicId,
+          secureUrl: image.secureUrl,
+          url: image.url,
+          isFinal: image.isFinal,
+        },
+      ];
+    });
+  };
+
   const handleLogout = async () => {
     try {
       await fetch(`${backendUrl}/auth/logout`, {
@@ -364,6 +409,7 @@ export default function App() {
     setNextCursor(null);
     setAccountImages([]);
     setImageFilter("all");
+    setSelectedReelImages([]);
     setView("account-images");
     loadImages({ accountId: account.id });
   };
@@ -389,11 +435,10 @@ export default function App() {
 
   const handleGenerateReel = async () => {
     if (!selectedAccount) return;
-    const count = Number(reelCount);
     const secondsPerImage = Number(reelSecondsPerImage);
     const zoomAmount = Number(reelZoomAmount);
-    if (!Number.isFinite(count) || count <= 0) {
-      setReelCreateError("Ingresa un número válido de imágenes.");
+    if (!selectedReelImages.length) {
+      setReelCreateError("Selecciona las imágenes que quieres usar.");
       return;
     }
     if (!Number.isFinite(secondsPerImage) || secondsPerImage <= 0) {
@@ -402,6 +447,12 @@ export default function App() {
     }
     if (!Number.isFinite(zoomAmount) || zoomAmount <= 0) {
       setReelCreateError("Ingresa una velocidad de zoom válida.");
+      return;
+    }
+    if (!selectedReelImages[selectedReelImages.length - 1]?.isFinal) {
+      setReelCreateError(
+        "La última imagen seleccionada debe tener la etiqueta Final."
+      );
       return;
     }
 
@@ -416,7 +467,11 @@ export default function App() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ count, secondsPerImage, zoomAmount }),
+          body: JSON.stringify({
+            imagePublicIds: selectedReelImages.map((image) => image.publicId),
+            secondsPerImage,
+            zoomAmount,
+          }),
         }
       );
 
@@ -438,6 +493,11 @@ export default function App() {
               "No hay imágenes con la tag final disponibles para cerrar el reel."
             );
           }
+          if (payload?.error === "final-not-last") {
+            throw new Error(
+              "La última imagen debe tener la etiqueta Final para cerrar el reel."
+            );
+          }
           throw new Error(
             `No hay suficientes imágenes sin tag reel. Disponibles: ${payload?.available ?? 0}.`
           );
@@ -448,6 +508,8 @@ export default function App() {
             "cloudinary-credentials-missing":
               "Faltan las credenciales de Cloudinary para esta cuenta.",
             "invalid-count": "Ingresa un número válido de imágenes.",
+            "invalid-selection": "Selecciona imágenes válidas para el reel.",
+            "duplicate-images": "No repitas imágenes en la selección.",
             "invalid-account": "La cuenta seleccionada no es válida.",
             "invalid-duration": "Ingresa segundos válidos por imagen.",
             "invalid-zoom": "Ingresa una velocidad de zoom válida.",
@@ -455,6 +517,10 @@ export default function App() {
           throw new Error(
             messageByError[payload?.error] || "No se pudo generar el reel."
           );
+        }
+
+        if (response.status === 404 && payload?.error === "image-not-found") {
+          throw new Error("Una de las imágenes seleccionadas no existe.");
         }
 
         throw new Error("No se pudo generar el reel.");
@@ -473,6 +539,7 @@ export default function App() {
         )
       );
       setReels((prev) => [payload.reel, ...prev]);
+      setSelectedReelImages([]);
       setReelCreateStatus("success");
     } catch (err) {
       console.error(err);
@@ -661,6 +728,13 @@ export default function App() {
                   ? Array.from(new Set([...(item.tags || []), "final"]))
                   : (item.tags || []).filter((tag) => tag !== "final"),
               }
+            : item
+        )
+      );
+      setSelectedReelImages((prev) =>
+        prev.map((item) =>
+          item.publicId === image.publicId
+            ? { ...item, isFinal: nextEnabled }
             : item
         )
       );
@@ -949,9 +1023,8 @@ export default function App() {
               <div>
                 <h2>Generar reel</h2>
                 <p className="subtitle">
-                  Seleccionaremos imágenes aleatorias sin tag reel y añadiremos
-                  una imagen con tag final para cerrar el video con zoom
-                  alternado.
+                  Selecciona las imágenes que quieres usar y asegúrate de dejar
+                  una imagen con tag final al final para cerrar el video.
                 </p>
               </div>
               <button
@@ -966,15 +1039,25 @@ export default function App() {
               </button>
             </header>
             <div className="reel-generator-controls">
-              <label>
-                Cantidad de imágenes
-                <input
-                  type="number"
-                  min="1"
-                  value={reelCount}
-                  onChange={(event) => setReelCount(event.target.value)}
-                />
-              </label>
+              <div className="reel-selection-summary">
+                <div>
+                  <p className="subtitle">
+                    Seleccionadas: {selectedReelImages.length}
+                  </p>
+                  <p className="muted">
+                    La última imagen debe tener la etiqueta Final.
+                  </p>
+                </div>
+                {selectedReelImages.length > 0 && (
+                  <button
+                    className="secondary small"
+                    type="button"
+                    onClick={() => setSelectedReelImages([])}
+                  >
+                    Limpiar selección
+                  </button>
+                )}
+              </div>
               <label>
                 Segundos por imagen
                 <input
@@ -1086,49 +1169,67 @@ export default function App() {
             )}
             {filteredImages.length > 0 ? (
               <div className="image-grid image-grid--large">
-                {filteredImages.map((image) => (
-                  <div className="image-card" key={image.id}>
+                {filteredImages.map((image) => {
+                  const isSelected = selectedReelIds.has(image.publicId);
+                  return (
                     <div
-                      className="image-thumb"
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => setLightboxImage(image)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          setLightboxImage(image);
-                        }
-                      }}
+                      className={`image-card${isSelected ? " selected" : ""}`}
+                      key={image.id}
                     >
-                      <img src={image.secureUrl || image.url} alt={image.publicId} />
-                      <span className="image-url">
-                        {image.secureUrl || image.url}
-                      </span>
-                    </div>
-                    <div className="image-actions">
-                      <button
-                        className={`secondary small reel-toggle${
-                          image.isReel ? " active" : ""
-                        }`}
-                        type="button"
-                        onClick={() => handleToggleReel(image)}
-                        disabled={reelUpdating[image.id]}
+                      <div
+                        className="image-thumb"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setLightboxImage(image)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setLightboxImage(image);
+                          }
+                        }}
                       >
-                        {image.isReel ? "Reel activo" : "Reel"}
-                      </button>
-                      <button
-                        className={`secondary small final-toggle${
-                          image.isFinal ? " active" : ""
-                        }`}
-                        type="button"
-                        onClick={() => handleToggleFinal(image)}
-                        disabled={finalUpdating[image.id]}
-                      >
-                        {image.isFinal ? "Final activo" : "Final"}
-                      </button>
+                        <img
+                          src={image.secureUrl || image.url}
+                          alt={image.publicId}
+                        />
+                        <span className="image-url">
+                          {image.secureUrl || image.url}
+                        </span>
+                      </div>
+                      <div className="image-actions">
+                        <button
+                          className={`secondary small reel-select${
+                            isSelected ? " active" : ""
+                          }`}
+                          type="button"
+                          onClick={() => handleToggleReelSelection(image)}
+                        >
+                          {isSelected ? "Seleccionada" : "Seleccionar"}
+                        </button>
+                        <button
+                          className={`secondary small reel-toggle${
+                            image.isReel ? " active" : ""
+                          }`}
+                          type="button"
+                          onClick={() => handleToggleReel(image)}
+                          disabled={reelUpdating[image.id]}
+                        >
+                          {image.isReel ? "Reel activo" : "Reel"}
+                        </button>
+                        <button
+                          className={`secondary small final-toggle${
+                            image.isFinal ? " active" : ""
+                          }`}
+                          type="button"
+                          onClick={() => handleToggleFinal(image)}
+                          disabled={finalUpdating[image.id]}
+                        >
+                          {image.isFinal ? "Final activo" : "Final"}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <p className="empty">

@@ -229,6 +229,32 @@ const fetchCloudinaryImages = async ({
   return result.resources || [];
 };
 
+const fetchCloudinaryImageResource = async ({ account, apiSecret, publicId }) => {
+  const authHeader = Buffer.from(`${account.apiKey}:${apiSecret}`).toString(
+    "base64"
+  );
+  const apiUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/resources/image/upload/${encodeURIComponent(
+    publicId
+  )}`;
+  const response = await fetch(apiUrl, {
+    method: "GET",
+    headers: {
+      Authorization: `Basic ${authHeader}`,
+    },
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`cloudinary-resource-failed:${response.status}:${errorBody}`);
+  }
+
+  return response.json();
+};
+
 const updateCloudinaryTags = async ({
   account,
   apiSecret,
@@ -1380,6 +1406,9 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
     logStep("start", {
       accountId: req.params.id,
       count: req.body?.count,
+      imagePublicIds: Array.isArray(req.body?.imagePublicIds)
+        ? req.body.imagePublicIds.length
+        : 0,
       secondsPerImage: req.body?.secondsPerImage,
       zoomAmount: req.body?.zoomAmount,
     });
@@ -1405,10 +1434,16 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
       return res.status(404).json({ error: "account-not-found", step: "account" });
     }
 
+    const requestedImagePublicIds = Array.isArray(req.body?.imagePublicIds)
+      ? req.body.imagePublicIds
+          .filter((publicId) => typeof publicId === "string")
+          .map((publicId) => publicId.trim())
+          .filter(Boolean)
+      : [];
     const requestedCount = Number(req.body?.count) || 0;
     const requestedSecondsPerImage = req.body?.secondsPerImage;
     const requestedZoomAmount = req.body?.zoomAmount;
-    if (requestedCount <= 0) {
+    if (!requestedImagePublicIds.length && requestedCount <= 0) {
       logStep("invalid-count", { requestedCount });
       return res.status(400).json({ error: "invalid-count", step: "input" });
     }
@@ -1446,60 +1481,112 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
         .json({ error: "cloudinary-credentials-missing", step: "credentials" });
     }
 
-    logStep("fetch-images", { requestedCount });
-    const nonFinalCount = Math.max(0, requestedCount - 1);
-    const availableImages =
-      nonFinalCount > 0
-        ? await fetchCloudinaryImages({
-            account,
-            apiSecret,
-            maxResults: Math.max(50, nonFinalCount * 3),
-            expression: "resource_type:image AND -tags=reel",
-          })
-        : [];
-    const finalImages = await fetchCloudinaryImages({
-      account,
-      apiSecret,
-      maxResults: 50,
-      expression: "resource_type:image AND tags=final",
-    });
+    let selected = [];
 
-    if (finalImages.length === 0) {
-      logStep("no-final-image");
-      return res.status(409).json({
-        error: "no-final-image",
-        step: "images",
+    if (requestedImagePublicIds.length) {
+      const uniqueIds = new Set(requestedImagePublicIds);
+      if (uniqueIds.size !== requestedImagePublicIds.length) {
+        logStep("duplicate-images");
+        return res.status(400).json({ error: "duplicate-images", step: "input" });
+      }
+
+      logStep("fetch-images", { requestedCount: requestedImagePublicIds.length });
+      const selectedResources = [];
+      for (const publicId of requestedImagePublicIds) {
+        const resource = await fetchCloudinaryImageResource({
+          account,
+          apiSecret,
+          publicId,
+        });
+
+        if (!resource) {
+          logStep("image-not-found", { publicId });
+          return res.status(404).json({
+            error: "image-not-found",
+            step: "images",
+            publicId,
+          });
+        }
+        selectedResources.push(resource);
+      }
+
+      if (!selectedResources.length) {
+        logStep("invalid-selection");
+        return res
+          .status(400)
+          .json({ error: "invalid-selection", step: "images" });
+      }
+
+      const lastResource = selectedResources[selectedResources.length - 1];
+      if (!lastResource.tags?.includes("final")) {
+        logStep("final-not-last", { publicId: lastResource.public_id });
+        return res.status(409).json({
+          error: "final-not-last",
+          step: "images",
+        });
+      }
+
+      selected = selectedResources.map((resource) => ({
+        publicId: resource.public_id,
+        secureUrl: resource.secure_url,
+        url: resource.url,
+      }));
+    } else {
+      logStep("fetch-images", { requestedCount });
+      const nonFinalCount = Math.max(0, requestedCount - 1);
+      const availableImages =
+        nonFinalCount > 0
+          ? await fetchCloudinaryImages({
+              account,
+              apiSecret,
+              maxResults: Math.max(50, nonFinalCount * 3),
+              expression: "resource_type:image AND -tags=reel",
+            })
+          : [];
+      const finalImages = await fetchCloudinaryImages({
+        account,
+        apiSecret,
+        maxResults: 50,
+        expression: "resource_type:image AND tags=final",
       });
+
+      if (finalImages.length === 0) {
+        logStep("no-final-image");
+        return res.status(409).json({
+          error: "no-final-image",
+          step: "images",
+        });
+      }
+
+      const finalResource = shuffleArray(finalImages)[0];
+      const filteredAvailableImages = availableImages.filter(
+        (resource) => resource.public_id !== finalResource.public_id
+      );
+
+      if (filteredAvailableImages.length < nonFinalCount) {
+        logStep("not-enough-images", { available: filteredAvailableImages.length });
+        return res.status(409).json({
+          error: "not-enough-images",
+          step: "images",
+          available: filteredAvailableImages.length,
+        });
+      }
+
+      selected = [
+        ...shuffleArray(filteredAvailableImages)
+          .slice(0, nonFinalCount)
+          .map((resource) => ({
+            publicId: resource.public_id,
+            secureUrl: resource.secure_url,
+            url: resource.url,
+          })),
+        {
+          publicId: finalResource.public_id,
+          secureUrl: finalResource.secure_url,
+          url: finalResource.url,
+        },
+      ];
     }
-
-    const finalResource = shuffleArray(finalImages)[0];
-    const filteredAvailableImages = availableImages.filter(
-      (resource) => resource.public_id !== finalResource.public_id
-    );
-
-    if (filteredAvailableImages.length < nonFinalCount) {
-      logStep("not-enough-images", { available: filteredAvailableImages.length });
-      return res.status(409).json({
-        error: "not-enough-images",
-        step: "images",
-        available: filteredAvailableImages.length,
-      });
-    }
-
-    const selected = [
-      ...shuffleArray(filteredAvailableImages)
-        .slice(0, nonFinalCount)
-        .map((resource) => ({
-          publicId: resource.public_id,
-          secureUrl: resource.secure_url,
-          url: resource.url,
-        })),
-      {
-        publicId: finalResource.public_id,
-        secureUrl: finalResource.secure_url,
-        url: finalResource.url,
-      },
-    ];
 
     logStep("render-local-start", { selectedCount: selected.length });
     const timestamp = Math.floor(Date.now() / 1000);

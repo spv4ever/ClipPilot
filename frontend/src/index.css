@@ -453,6 +453,18 @@ input {
   gap: 1rem 1.5rem;
 }
 
+.reel-selection-summary {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(15, 23, 42, 0.6);
+}
+
 .reel-generator-controls label {
   display: flex;
   flex-direction: column;
@@ -549,6 +561,11 @@ input {
   text-align: center;
 }
 
+.image-card.selected {
+  border-color: rgba(56, 189, 248, 0.85);
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.2);
+}
+
 .image-actions {
   display: flex;
   flex-direction: column;
@@ -605,6 +622,12 @@ input {
   border-color: rgba(56, 189, 248, 0.9);
   color: #e0f2fe;
   box-shadow: 0 0 18px rgba(56, 189, 248, 0.35);
+}
+
+.reel-select.active {
+  border-color: rgba(125, 211, 252, 0.9);
+  color: #e0f2fe;
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.2);
 }
 
 .final-toggle.active {
