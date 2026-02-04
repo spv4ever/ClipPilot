@@ -331,6 +331,11 @@ export default function App() {
     loadImages({ accountId: selectedAccount.id, cursor });
   };
 
+  const handleRefreshImages = () => {
+    if (!selectedAccount) return;
+    loadImages({ accountId: selectedAccount.id, cursor: currentCursor });
+  };
+
   const handleDraftChange = (field) => (event) => {
     setDraft((prev) => ({ ...prev, [field]: event.target.value }));
   };
@@ -731,6 +736,13 @@ export default function App() {
                   disabled={cursorStack.length === 0 || imagesStatus === "loading"}
                 >
                   Atrás
+                </button>
+                <button
+                  className="secondary"
+                  onClick={handleRefreshImages}
+                  disabled={imagesStatus === "loading"}
+                >
+                  Refrescar
                 </button>
                 <button
                   className="secondary"
