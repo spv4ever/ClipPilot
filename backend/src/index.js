@@ -344,7 +344,9 @@ const runFfmpeg = async (args) =>
 const renderReelVideo = async ({
   images,
   outputPath,
-  durationSeconds = 3,
+  durationSeconds = 2,
+  transitionSeconds = 0.5,
+  zoomAmount = 0.05,
   fps = 30,
   width = 1080,
   height = 1920,
@@ -361,37 +363,71 @@ const renderReelVideo = async ({
       imagePaths.push(imagePath);
     }
 
-    const listPath = path.join(tempDir, "inputs.txt");
-    const formatConcatPath = (value) => {
-      const normalized = value.replace(/\\/g, "/");
-      const escaped = normalized.replace(/'/g, "'\\''");
-      return `'${escaped}'`;
-    };
-    const listLines = imagePaths.flatMap((imagePath) => [
-      `file ${formatConcatPath(imagePath)}`,
-      `duration ${durationSeconds}`,
-    ]);
-    listLines.push(
-      `file ${formatConcatPath(imagePaths[imagePaths.length - 1])}`,
-    );
-    await fs.writeFile(listPath, `${listLines.join("\n")}\n`);
+    const safeZoomAmount = Math.max(0.01, Math.min(0.3, zoomAmount));
+    const safeTransition = Math.max(0, Math.min(2, transitionSeconds));
+    const safeDuration = Math.max(0.5, durationSeconds);
 
-    const filter = [
-      `scale=${width}:${height}:force_original_aspect_ratio=decrease`,
-      `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`,
-      "format=yuv420p",
-    ].join(",");
+    const inputArgs = imagePaths.flatMap((imagePath) => ["-loop", "1", "-i", imagePath]);
+    const filterParts = [];
+    const streamLabels = [];
+
+    const buildZoomExpression = (frameCount) => {
+      const zoomIn = Math.random() >= 0.5;
+      const startZoom = zoomIn ? 1 : 1 + safeZoomAmount;
+      const endZoom = zoomIn ? 1 + safeZoomAmount : 1;
+      const step =
+        frameCount > 1 ? (endZoom - startZoom) / (frameCount - 1) : 0;
+      const stepExpr = `${step >= 0 ? "+" : ""}${step.toFixed(6)}`;
+      return {
+        startZoom: startZoom.toFixed(6),
+        stepExpr,
+      };
+    };
+
+    imagePaths.forEach((_, index) => {
+      const isLast = index === imagePaths.length - 1;
+      const seconds = isLast ? safeDuration : safeDuration + safeTransition;
+      const frameCount = Math.max(1, Math.round(seconds * fps));
+      const { startZoom, stepExpr } = buildZoomExpression(frameCount);
+      const inputLabel = `[${index}:v]`;
+      const outputLabel = `[v${index}]`;
+      const zoompan = [
+        `zoompan=z='if(eq(on,0),${startZoom},zoom${stepExpr})'`,
+        "x='iw/2-(iw/zoom/2)'",
+        "y='ih/2-(ih/zoom/2)'",
+        `d=${frameCount}`,
+        `s=${width}x${height}`,
+        `fps=${fps}`,
+      ].join(":");
+      filterParts.push(
+        `${inputLabel}scale=${width}:${height}:force_original_aspect_ratio=decrease,` +
+          `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,${zoompan}${outputLabel}`
+      );
+      streamLabels.push(outputLabel);
+    });
+
+    let currentLabel = streamLabels[0];
+    for (let index = 1; index < streamLabels.length; index += 1) {
+      const nextLabel = streamLabels[index];
+      const outputLabel = `[xf${index}]`;
+      const offset = (safeDuration * index).toFixed(3);
+      filterParts.push(
+        `${currentLabel}${nextLabel}xfade=transition=fade:duration=${safeTransition}:offset=${offset}${outputLabel}`
+      );
+      currentLabel = outputLabel;
+    }
+
+    filterParts.push(`${currentLabel}format=yuv420p[video]`);
+
+    const filterComplex = filterParts.join(";");
 
     await runFfmpeg([
       "-y",
-      "-f",
-      "concat",
-      "-safe",
-      "0",
-      "-i",
-      listPath,
-      "-vf",
-      filter,
+      ...inputArgs,
+      "-filter_complex",
+      filterComplex,
+      "-map",
+      "[video]",
       "-r",
       String(fps),
       "-c:v",
@@ -1061,7 +1097,12 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
     const logStep = (step, details = {}) => {
       console.info("[reel]", step, details);
     };
-    logStep("start", { accountId: req.params.id, count: req.body?.count });
+    logStep("start", {
+      accountId: req.params.id,
+      count: req.body?.count,
+      secondsPerImage: req.body?.secondsPerImage,
+      zoomAmount: req.body?.zoomAmount,
+    });
     const accounts = await getAccountsCollection();
     const reels = await getReelsCollection();
     if (!accounts || !reels) {
@@ -1085,10 +1126,37 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
     }
 
     const requestedCount = Number(req.body?.count) || 0;
+    const requestedSecondsPerImage = req.body?.secondsPerImage;
+    const requestedZoomAmount = req.body?.zoomAmount;
     if (requestedCount <= 0) {
       logStep("invalid-count", { requestedCount });
       return res.status(400).json({ error: "invalid-count", step: "input" });
     }
+    if (
+      requestedSecondsPerImage !== undefined &&
+      (!Number.isFinite(Number(requestedSecondsPerImage)) ||
+        Number(requestedSecondsPerImage) <= 0)
+    ) {
+      logStep("invalid-duration", { requestedSecondsPerImage });
+      return res
+        .status(400)
+        .json({ error: "invalid-duration", step: "input" });
+    }
+    if (
+      requestedZoomAmount !== undefined &&
+      (!Number.isFinite(Number(requestedZoomAmount)) ||
+        Number(requestedZoomAmount) <= 0)
+    ) {
+      logStep("invalid-zoom", { requestedZoomAmount });
+      return res.status(400).json({ error: "invalid-zoom", step: "input" });
+    }
+
+    const secondsPerImage =
+      requestedSecondsPerImage !== undefined
+        ? Number(requestedSecondsPerImage)
+        : 2;
+    const zoomAmount =
+      requestedZoomAmount !== undefined ? Number(requestedZoomAmount) : 0.05;
 
     const apiSecret = decryptSecret(account.apiSecret);
     if (!account.cloudName || !account.apiKey || !apiSecret) {
@@ -1137,7 +1205,12 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
     const tempOutputPath = path.join(os.tmpdir(), `${publicId}.mp4`);
     let uploadResponse;
     try {
-      await renderReelVideo({ images: selected, outputPath: tempOutputPath });
+      await renderReelVideo({
+        images: selected,
+        outputPath: tempOutputPath,
+        durationSeconds: secondsPerImage,
+        zoomAmount,
+      });
       logStep("render-local-complete", { publicId });
 
       const videoBuffer = await fs.readFile(tempOutputPath);

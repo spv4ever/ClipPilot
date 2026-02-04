@@ -47,6 +47,8 @@ export default function App() {
   const [imageCountsStatus, setImageCountsStatus] = useState("idle");
   const [reelUpdating, setReelUpdating] = useState({});
   const [reelCount, setReelCount] = useState(5);
+  const [reelSecondsPerImage, setReelSecondsPerImage] = useState(2);
+  const [reelZoomAmount, setReelZoomAmount] = useState(0.05);
   const [reelCreateStatus, setReelCreateStatus] = useState("idle");
   const [reelCreateError, setReelCreateError] = useState("");
   const [reels, setReels] = useState([]);
@@ -387,8 +389,18 @@ export default function App() {
   const handleGenerateReel = async () => {
     if (!selectedAccount) return;
     const count = Number(reelCount);
+    const secondsPerImage = Number(reelSecondsPerImage);
+    const zoomAmount = Number(reelZoomAmount);
     if (!Number.isFinite(count) || count <= 0) {
       setReelCreateError("Ingresa un número válido de imágenes.");
+      return;
+    }
+    if (!Number.isFinite(secondsPerImage) || secondsPerImage <= 0) {
+      setReelCreateError("Ingresa segundos válidos por imagen.");
+      return;
+    }
+    if (!Number.isFinite(zoomAmount) || zoomAmount <= 0) {
+      setReelCreateError("Ingresa una velocidad de zoom válida.");
       return;
     }
 
@@ -403,7 +415,7 @@ export default function App() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ count }),
+          body: JSON.stringify({ count, secondsPerImage, zoomAmount }),
         }
       );
 
@@ -431,6 +443,8 @@ export default function App() {
               "Faltan las credenciales de Cloudinary para esta cuenta.",
             "invalid-count": "Ingresa un número válido de imágenes.",
             "invalid-account": "La cuenta seleccionada no es válida.",
+            "invalid-duration": "Ingresa segundos válidos por imagen.",
+            "invalid-zoom": "Ingresa una velocidad de zoom válida.",
           };
           throw new Error(
             messageByError[payload?.error] || "No se pudo generar el reel."
@@ -900,6 +914,28 @@ export default function App() {
                   value={reelCount}
                   onChange={(event) => setReelCount(event.target.value)}
                 />
+              </label>
+              <label>
+                Segundos por imagen
+                <input
+                  type="number"
+                  min="0.5"
+                  step="0.5"
+                  value={reelSecondsPerImage}
+                  onChange={(event) => setReelSecondsPerImage(event.target.value)}
+                />
+              </label>
+              <label>
+                Velocidad de zoom
+                <input
+                  type="number"
+                  min="0.01"
+                  max="0.3"
+                  step="0.01"
+                  value={reelZoomAmount}
+                  onChange={(event) => setReelZoomAmount(event.target.value)}
+                />
+                <span className="hint">0.05 es un zoom lento recomendado.</span>
               </label>
               <button
                 className="primary"
