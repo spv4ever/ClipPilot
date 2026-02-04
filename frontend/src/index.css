@@ -450,6 +450,13 @@ input {
   min-width: 200px;
 }
 
+.reel-generator-controls .hint {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  color: rgba(148, 163, 184, 0.8);
+}
+
 .reel-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
