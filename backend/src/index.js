@@ -348,7 +348,9 @@ const renderReelVideo = async ({
   width = 1080,
   height = 1920,
 }) => {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "clippilot-reel-"));
+  const baseTempDir = path.join(process.cwd(), "tmp", "reels");
+  await fs.mkdir(baseTempDir, { recursive: true });
+  const tempDir = await fs.mkdtemp(path.join(baseTempDir, "clippilot-reel-"));
   try {
     const imagePaths = [];
     for (let index = 0; index < images.length; index += 1) {
@@ -392,6 +394,16 @@ const renderReelVideo = async ({
     ]);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
+    try {
+      const remaining = await fs.readdir(baseTempDir);
+      if (remaining.length === 0) {
+        await fs.rmdir(baseTempDir);
+      }
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        throw error;
+      }
+    }
   }
 };
 
