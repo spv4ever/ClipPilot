@@ -312,6 +312,9 @@ export default function App() {
     if (imageFilter === "reels") {
       return accountImages.filter((image) => image.isReel);
     }
+    if (imageFilter === "no-reels") {
+      return accountImages.filter((image) => !image.isReel);
+    }
     return accountImages;
   }, [accountImages, imageFilter]);
 
@@ -756,6 +759,15 @@ export default function App() {
                   aria-selected={imageFilter === "reels"}
                 >
                   Reels
+                </button>
+                <button
+                  className={`secondary small${imageFilter === "no-reels" ? " active" : ""}`}
+                  type="button"
+                  onClick={() => setImageFilter("no-reels")}
+                  role="tab"
+                  aria-selected={imageFilter === "no-reels"}
+                >
+                  No Reels
                 </button>
               </div>
               <div className="pagination">
