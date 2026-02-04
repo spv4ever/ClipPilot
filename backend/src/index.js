@@ -5,7 +5,12 @@ import dotenv from "dotenv";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import crypto from "crypto";
+import { promises as fs } from "fs";
+import fsSync from "fs";
 import { MongoClient, ObjectId } from "mongodb";
+import os from "os";
+import path from "path";
+import { spawn } from "child_process";
 
 dotenv.config();
 
@@ -302,6 +307,92 @@ const buildReelTransformation = (images) => {
   return images
     .map((image, index) => baseTransform(image.publicId, index, index !== 0))
     .join("/");
+};
+
+const downloadImageToFile = async (url, destination) => {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`image-download-failed:${response.status}`);
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  await fs.writeFile(destination, buffer);
+};
+
+const runFfmpeg = async (args) =>
+  new Promise((resolve, reject) => {
+    const process = spawn("ffmpeg", args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stderr = "";
+
+    process.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    process.on("error", (error) => {
+      reject(error);
+    });
+
+    process.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`ffmpeg-failed:${code}:${stderr}`));
+      }
+    });
+  });
+
+const renderReelVideo = async ({
+  images,
+  outputPath,
+  durationSeconds = 3,
+  fps = 30,
+  width = 1080,
+  height = 1920,
+}) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "clippilot-reel-"));
+  try {
+    const imagePaths = [];
+    for (let index = 0; index < images.length; index += 1) {
+      const image = images[index];
+      const imagePath = path.join(tempDir, `frame_${index + 1}.jpg`);
+      await downloadImageToFile(image.secureUrl || image.url, imagePath);
+      imagePaths.push(imagePath);
+    }
+
+    const listPath = path.join(tempDir, "inputs.txt");
+    const listLines = imagePaths.flatMap((imagePath) => [
+      `file ${JSON.stringify(imagePath)}`,
+      `duration ${durationSeconds}`,
+    ]);
+    listLines.push(`file ${JSON.stringify(imagePaths[imagePaths.length - 1])}`);
+    await fs.writeFile(listPath, `${listLines.join("\n")}\n`);
+
+    const filter = [
+      `scale=${width}:${height}:force_original_aspect_ratio=decrease`,
+      `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`,
+      "format=yuv420p",
+    ].join(",");
+
+    await runFfmpeg([
+      "-y",
+      "-f",
+      "concat",
+      "-safe",
+      "0",
+      "-i",
+      listPath,
+      "-vf",
+      filter,
+      "-r",
+      String(fps),
+      "-c:v",
+      "libx264",
+      "-movflags",
+      "+faststart",
+      outputPath,
+    ]);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
 };
 
 const shuffleArray = (values) => {
@@ -1012,8 +1103,7 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
         url: resource.url,
       }));
 
-    logStep("build-transformation", { selectedCount: selected.length });
-    const transformation = buildReelTransformation(selected);
+    logStep("render-local-start", { selectedCount: selected.length });
     const timestamp = Math.floor(Date.now() / 1000);
     const publicId = `reel_${Date.now()}`;
     const folder = "reels";
@@ -1021,29 +1111,40 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
       folder,
       public_id: publicId,
       timestamp,
-      transformation,
     };
     const signature = buildCloudinarySignature(signatureParams, apiSecret);
 
-    const uploadParams = new URLSearchParams();
-    uploadParams.append("file", selected[0].secureUrl || selected[0].url);
-    uploadParams.append("api_key", account.apiKey);
-    uploadParams.append("timestamp", String(timestamp));
-    uploadParams.append("public_id", publicId);
-    uploadParams.append("folder", folder);
-    uploadParams.append("resource_type", "video");
-    uploadParams.append("transformation", transformation);
-    uploadParams.append("signature", signature);
+    const tempOutputPath = path.join(os.tmpdir(), `${publicId}.mp4`);
+    let uploadResponse;
+    try {
+      await renderReelVideo({ images: selected, outputPath: tempOutputPath });
+      logStep("render-local-complete", { publicId });
 
-    const uploadUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/video/upload`;
-    logStep("upload-start", { uploadUrl, publicId });
-    const uploadResponse = await fetch(uploadUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: uploadParams.toString(),
-    });
+      const uploadParams = new FormData();
+      uploadParams.append(
+        "file",
+        fsSync.createReadStream(tempOutputPath),
+        `${publicId}.mp4`
+      );
+      uploadParams.append("api_key", account.apiKey);
+      uploadParams.append("timestamp", String(timestamp));
+      uploadParams.append("public_id", publicId);
+      uploadParams.append("folder", folder);
+      uploadParams.append("signature", signature);
+
+      const uploadUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/video/upload`;
+      logStep("upload-start", { uploadUrl, publicId });
+      uploadResponse = await fetch(uploadUrl, {
+        method: "POST",
+        body: uploadParams,
+      });
+    } finally {
+      await fs.rm(tempOutputPath, { force: true });
+    }
+
+    if (!uploadResponse) {
+      throw new Error("upload-not-started");
+    }
 
     if (!uploadResponse.ok) {
       const errorBody = await uploadResponse.text();
