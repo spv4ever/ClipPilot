@@ -704,6 +704,9 @@ app.post(
       if (!account.cloudName || !account.apiKey || !apiSecret) {
         return res.status(400).json({ error: "cloudinary-credentials-missing" });
       }
+      const authHeader = Buffer.from(`${account.apiKey}:${apiSecret}`).toString(
+        "base64"
+      );
 
       const baseUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/image/tags`;
       const tagParams = new URLSearchParams();
