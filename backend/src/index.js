@@ -705,10 +705,7 @@ app.post(
         return res.status(400).json({ error: "cloudinary-credentials-missing" });
       }
 
-      const authHeader = Buffer.from(`${account.apiKey}:${apiSecret}`).toString(
-        "base64"
-      );
-      const baseUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/resources/image/tags/reel`;
+      const baseUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/image/tags`;
       const tagParams = new URLSearchParams();
       const deliveryType =
         typeof type === "string" && type.trim() ? type.trim() : "upload";
@@ -718,29 +715,47 @@ app.post(
         deliveryType,
         enabled: parsedEnabled,
       });
+      const isAdd = parsedEnabled === true;
+      const command = isAdd ? "add" : "remove";
+      const timestamp = Math.floor(Date.now() / 1000);
+      const signatureParams = {
+        command,
+        tag: "reel",
+        timestamp,
+        type: deliveryType,
+        public_ids: publicId,
+      };
+      const signature = crypto
+        .createHash("sha1")
+        .update(
+          Object.entries(signatureParams)
+            .filter(([, value]) => value !== undefined && value !== null)
+            .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+            .map(([key, value]) => `${key}=${value}`)
+            .join("&") + apiSecret
+        )
+        .digest("hex");
+
+      tagParams.append("command", command);
+      tagParams.append("tag", "reel");
       tagParams.append("public_ids[]", publicId);
       tagParams.append("type", deliveryType);
-      const isAdd = parsedEnabled === true;
+      tagParams.append("timestamp", String(timestamp));
+      tagParams.append("api_key", account.apiKey);
+      tagParams.append("signature", signature);
       const apiUrl = new URL(baseUrl);
       console.info("[reel] tag update request", {
-        method: isAdd ? "POST" : "DELETE",
+        method: "POST",
         url: apiUrl.toString(),
-        body: isAdd ? tagParams.toString() : null,
+        body: tagParams.toString(),
       });
       const requestInit = {
-        method: isAdd ? "POST" : "DELETE",
+        method: "POST",
         headers: {
-          Authorization: `Basic ${authHeader}`,
           "Content-Type": "application/x-www-form-urlencoded",
         },
+        body: tagParams.toString(),
       };
-
-      if (isAdd) {
-        requestInit.body = tagParams.toString();
-      } else {
-        apiUrl.search = tagParams.toString();
-        delete requestInit.body;
-      }
 
       const response = await fetch(apiUrl, requestInit);
       console.info("[reel] tag update response", {
