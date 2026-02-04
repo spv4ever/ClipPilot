@@ -48,6 +48,8 @@ export default function App() {
   const [reelUpdating, setReelUpdating] = useState({});
   const [finalUpdating, setFinalUpdating] = useState({});
   const [selectedReelImages, setSelectedReelImages] = useState([]);
+  const [reelSelectionMode, setReelSelectionMode] = useState("manual");
+  const [reelRandomCount, setReelRandomCount] = useState(6);
   const [reelSecondsPerImage, setReelSecondsPerImage] = useState(2);
   const [reelZoomAmount, setReelZoomAmount] = useState(0.05);
   const [reelCreateStatus, setReelCreateStatus] = useState("idle");
@@ -352,6 +354,9 @@ export default function App() {
   }, [accountImages, selectedReelImages.length]);
 
   const handleToggleReelSelection = (image) => {
+    if (reelSelectionMode === "random") {
+      return;
+    }
     setSelectedReelImages((prev) => {
       const exists = prev.some((item) => item.publicId === image.publicId);
       if (exists) {
@@ -437,8 +442,14 @@ export default function App() {
     if (!selectedAccount) return;
     const secondsPerImage = Number(reelSecondsPerImage);
     const zoomAmount = Number(reelZoomAmount);
-    if (!selectedReelImages.length) {
+    const randomCount = Number(reelRandomCount);
+    const isRandomSelection = reelSelectionMode === "random";
+    if (!isRandomSelection && !selectedReelImages.length) {
       setReelCreateError("Selecciona las imágenes que quieres usar.");
+      return;
+    }
+    if (isRandomSelection && (!Number.isFinite(randomCount) || randomCount <= 0)) {
+      setReelCreateError("Ingresa un número válido de imágenes.");
       return;
     }
     if (!Number.isFinite(secondsPerImage) || secondsPerImage <= 0) {
@@ -449,7 +460,7 @@ export default function App() {
       setReelCreateError("Ingresa una velocidad de zoom válida.");
       return;
     }
-    if (!selectedReelImages[selectedReelImages.length - 1]?.isFinal) {
+    if (!isRandomSelection && !selectedReelImages[selectedReelImages.length - 1]?.isFinal) {
       setReelCreateError(
         "La última imagen seleccionada debe tener la etiqueta Final."
       );
@@ -468,7 +479,9 @@ export default function App() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            imagePublicIds: selectedReelImages.map((image) => image.publicId),
+            ...(isRandomSelection
+              ? { count: randomCount }
+              : { imagePublicIds: selectedReelImages.map((image) => image.publicId) }),
             secondsPerImage,
             zoomAmount,
           }),
@@ -1042,13 +1055,17 @@ export default function App() {
               <div className="reel-selection-summary">
                 <div>
                   <p className="subtitle">
-                    Seleccionadas: {selectedReelImages.length}
+                    {reelSelectionMode === "manual"
+                      ? `Seleccionadas: ${selectedReelImages.length}`
+                      : "Selección aleatoria activa"}
                   </p>
                   <p className="muted">
-                    La última imagen debe tener la etiqueta Final.
+                    {reelSelectionMode === "manual"
+                      ? "La última imagen debe tener la etiqueta Final."
+                      : "Seleccionaremos imágenes aleatorias y cerraremos con la imagen final."}
                   </p>
                 </div>
-                {selectedReelImages.length > 0 && (
+                {reelSelectionMode === "manual" && selectedReelImages.length > 0 && (
                   <button
                     className="secondary small"
                     type="button"
@@ -1058,6 +1075,42 @@ export default function App() {
                   </button>
                 )}
               </div>
+              <div className="filter-tabs" role="tablist" aria-label="Modo de selección">
+                <button
+                  className={`secondary small${
+                    reelSelectionMode === "manual" ? " active" : ""
+                  }`}
+                  type="button"
+                  role="tab"
+                  aria-selected={reelSelectionMode === "manual"}
+                  onClick={() => setReelSelectionMode("manual")}
+                >
+                  Selección manual
+                </button>
+                <button
+                  className={`secondary small${
+                    reelSelectionMode === "random" ? " active" : ""
+                  }`}
+                  type="button"
+                  role="tab"
+                  aria-selected={reelSelectionMode === "random"}
+                  onClick={() => setReelSelectionMode("random")}
+                >
+                  Selección aleatoria
+                </button>
+              </div>
+              {reelSelectionMode === "random" && (
+                <label>
+                  Número de imágenes
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={reelRandomCount}
+                    onChange={(event) => setReelRandomCount(event.target.value)}
+                  />
+                </label>
+              )}
               <label>
                 Segundos por imagen
                 <input
@@ -1203,8 +1256,13 @@ export default function App() {
                           }`}
                           type="button"
                           onClick={() => handleToggleReelSelection(image)}
+                          disabled={reelSelectionMode === "random"}
                         >
-                          {isSelected ? "Seleccionada" : "Seleccionar"}
+                          {reelSelectionMode === "random"
+                            ? "Selección aleatoria"
+                            : isSelected
+                              ? "Seleccionada"
+                              : "Seleccionar"}
                         </button>
                         <button
                           className={`secondary small reel-toggle${
