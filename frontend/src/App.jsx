@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const backendUrl =
   import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
@@ -18,6 +18,11 @@ const steps = [
   "Ve a Settings → Access Keys para copiar Cloud name, API Key y API Secret.",
   "Regresa aquí y registra tu cuenta para gestionar tus credenciales.",
 ];
+
+const storageKeys = {
+  view: "clippilot:lastView",
+  accountId: "clippilot:lastAccountId",
+};
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -39,6 +44,7 @@ export default function App() {
   const [imageCounts, setImageCounts] = useState({});
   const [imageCountsStatus, setImageCountsStatus] = useState("idle");
   const [reelUpdating, setReelUpdating] = useState({});
+  const hasRestoredView = useRef(false);
 
   const displayName = useMemo(() => user?.displayName || "", [user]);
   const userRole = useMemo(() => user?.role || "free", [user]);
@@ -52,6 +58,8 @@ export default function App() {
     setAccounts([]);
     setView("home");
     setLoginError("Tu sesión expiró. Inicia sesión de nuevo.");
+    localStorage.removeItem(storageKeys.view);
+    localStorage.removeItem(storageKeys.accountId);
     return true;
   };
 
@@ -223,6 +231,51 @@ export default function App() {
     loadImageCounts(accounts);
   }, [accounts, isAuthenticated]);
 
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+    if (view) {
+      localStorage.setItem(storageKeys.view, view);
+    }
+    if (selectedAccount?.id) {
+      localStorage.setItem(storageKeys.accountId, selectedAccount.id);
+    }
+  }, [isAuthenticated, selectedAccount, view]);
+
+  useEffect(() => {
+    if (hasRestoredView.current) {
+      return;
+    }
+    if (!isAuthenticated) {
+      return;
+    }
+    const storedView = localStorage.getItem(storageKeys.view) || "home";
+    const storedAccountId = localStorage.getItem(storageKeys.accountId);
+    if (storedView === "account-images" && storedAccountId) {
+      const storedAccount = accounts.find(
+        (account) => account.id === storedAccountId
+      );
+      if (storedAccount) {
+        setSelectedAccount(storedAccount);
+        setCursorStack([]);
+        setCurrentCursor(null);
+        setNextCursor(null);
+        setAccountImages([]);
+        setView("account-images");
+        loadImages({ accountId: storedAccount.id });
+        hasRestoredView.current = true;
+        return;
+      }
+    }
+    if (storedView === "cloudinary") {
+      setView("cloudinary");
+    } else {
+      setView("home");
+    }
+    hasRestoredView.current = true;
+  }, [accounts, isAuthenticated]);
+
   const handleLogout = async () => {
     try {
       await fetch(`${backendUrl}/auth/logout`, {
@@ -233,6 +286,8 @@ export default function App() {
       setStatus("guest");
       setAccounts([]);
       setView("home");
+      localStorage.removeItem(storageKeys.view);
+      localStorage.removeItem(storageKeys.accountId);
     } catch (err) {
       console.error(err);
       setError("No se pudo cerrar sesión.");
