@@ -352,6 +352,61 @@ const runFfmpeg = async (args) =>
     });
   });
 
+const runFfprobe = async (args) =>
+  new Promise((resolve, reject) => {
+    const process = spawn("ffprobe", args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+
+    process.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    process.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    process.on("error", (error) => {
+      reject(error);
+    });
+
+    process.on("close", (code) => {
+      if (code === 0) {
+        resolve(stdout.trim());
+      } else {
+        reject(new Error(`ffprobe-failed:${code}:${stderr}`));
+      }
+    });
+  });
+
+const getAudioFiles = async (directory) => {
+  try {
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".mp3"))
+      .map((entry) => path.join(directory, entry.name));
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+};
+
+const getMediaDurationSeconds = async (filePath) => {
+  const output = await runFfprobe([
+    "-v",
+    "error",
+    "-show_entries",
+    "format=duration",
+    "-of",
+    "default=noprint_wrappers=1:nokey=1",
+    filePath,
+  ]);
+  const value = Number.parseFloat(output);
+  return Number.isFinite(value) ? value : 0;
+};
+
 const renderReelVideo = async ({
   images,
   outputPath,
@@ -392,12 +447,22 @@ const renderReelVideo = async ({
     const safeZoomAmount = Math.max(0.01, Math.min(0.3, zoomAmount));
     const safeDuration = Math.max(0.5, durationSeconds);
     const safeTransition = Math.max(0, Math.min(2, transitionSeconds, safeDuration));
-    const fadeDuration = Math.min(Math.max(0.1, safeTransition || 0.5), safeDuration / 2);
+    const fadeDuration = Math.min(
+      Math.max(0.1, safeTransition || 0.5),
+      safeDuration / 2
+    );
     const effectiveClipDuration = Math.max(0, safeDuration - safeTransition);
     const totalDuration =
       imagePaths.length > 0
         ? safeDuration + effectiveClipDuration * (imagePaths.length - 1)
         : 0;
+
+    const audioDirectory = path.resolve(__dirname, "..", "audio");
+    const audioFiles = await getAudioFiles(audioDirectory);
+    const selectedAudio =
+      totalDuration > 0 && audioFiles.length > 0
+        ? audioFiles[Math.floor(Math.random() * audioFiles.length)]
+        : null;
 
     const inputArgs = [];
     const filterParts = [];
@@ -455,6 +520,31 @@ const renderReelVideo = async ({
       `${currentLabel}fade=t=out:st=${fadeOutStart}:d=${fadeDuration},format=yuv420p[video]`
     );
 
+    let audioLabel = null;
+    if (selectedAudio) {
+      const audioDuration = await getMediaDurationSeconds(selectedAudio);
+      const hasRoomForStart = audioDuration > totalDuration;
+      const maxStart = hasRoomForStart ? audioDuration - totalDuration : 0;
+      const startTime = hasRoomForStart ? Math.random() * maxStart : 0;
+      const audioStart = Math.max(0, startTime).toFixed(3);
+      if (!hasRoomForStart) {
+        inputArgs.push("-stream_loop", "-1");
+      }
+      inputArgs.push("-ss", audioStart, "-t", totalDuration.toFixed(3), "-i", selectedAudio);
+
+      const audioInputIndex = imagePaths.length;
+      const audioFadeOutStart = Math.max(0, totalDuration - fadeDuration).toFixed(3);
+      const audioFilters = [
+        `[${audioInputIndex}:a]atrim=0:${totalDuration.toFixed(3)}`,
+        "asetpts=PTS-STARTPTS",
+        `afade=t=in:st=0:d=${fadeDuration}`,
+        `afade=t=out:st=${audioFadeOutStart}:d=${fadeDuration}`,
+        "[audio]",
+      ].join(",");
+      filterParts.push(audioFilters);
+      audioLabel = "[audio]";
+    }
+
     const filterComplex = filterParts.join(";");
 
     logProgress("render-ffmpeg-start", {
@@ -471,10 +561,12 @@ const renderReelVideo = async ({
       filterComplex,
       "-map",
       "[video]",
+      ...(audioLabel ? ["-map", audioLabel] : []),
       "-r",
       String(fps),
       "-c:v",
       "libx264",
+      ...(audioLabel ? ["-c:a", "aac", "-b:a", "192k"] : []),
       "-shortest",
       "-movflags",
       "+faststart",
