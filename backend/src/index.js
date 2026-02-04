@@ -12,12 +12,15 @@ import { MongoClient, ObjectId } from "mongodb";
 import os from "os";
 import path from "path";
 import { spawn } from "child_process";
+import { fileURLToPath } from "url";
 
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 4000;
 const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
   console.warn("Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET in environment.");
