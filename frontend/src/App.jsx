@@ -803,20 +803,24 @@ export default function App() {
               <div className="image-grid image-grid--large">
                 {filteredImages.map((image) => (
                   <div className="image-card" key={image.id}>
-                    <div className="image-thumb">
+                    <div
+                      className="image-thumb"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setLightboxImage(image)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setLightboxImage(image);
+                        }
+                      }}
+                    >
                       <img src={image.secureUrl || image.url} alt={image.publicId} />
                       <span className="image-url">
                         {image.secureUrl || image.url}
                       </span>
                     </div>
                     <div className="image-actions">
-                      <button
-                        className="secondary small"
-                        type="button"
-                        onClick={() => setLightboxImage(image)}
-                      >
-                        Abrir vista previa
-                      </button>
                       <button
                         className={`secondary small reel-toggle${
                           image.isReel ? " active" : ""
