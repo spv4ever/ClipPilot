@@ -743,11 +743,6 @@ app.post(
       tagParams.append("api_key", account.apiKey);
       tagParams.append("signature", signature);
       const apiUrl = new URL(baseUrl);
-      console.info("[reel] tag update request", {
-        method: "POST",
-        url: apiUrl.toString(),
-        body: tagParams.toString(),
-      });
       const requestInit = {
         method: "POST",
         headers: {
@@ -757,10 +752,6 @@ app.post(
       };
 
       const response = await fetch(apiUrl, requestInit);
-      console.info("[reel] tag update response", {
-        status: response.status,
-        ok: response.ok,
-      });
 
       if (!response.ok) {
         const errorBody = await response.text();
@@ -804,19 +795,10 @@ app.post(
       contextParams.append("timestamp", String(timestamp2));
       contextParams.append("api_key", account.apiKey);
       contextParams.append("signature", contextSignature);
-      console.info("[reel] context update request", {
-        method: "POST",
-        url: contextUrl,
-        body: contextParams.toString(),
-      });
       const contextResponse = await fetch(contextUrl, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: contextParams.toString(),
-      });
-      console.info("[reel] context update response", {
-        status: contextResponse.status,
-        ok: contextResponse.ok,
       });
 
       if (!contextResponse.ok) {
