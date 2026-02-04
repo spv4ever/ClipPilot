@@ -393,7 +393,7 @@ const renderReelVideo = async ({
     const safeTransition = Math.max(0, Math.min(2, transitionSeconds));
     const safeDuration = Math.max(0.5, durationSeconds);
 
-    const inputArgs = imagePaths.flatMap((imagePath) => ["-loop", "1", "-i", imagePath]);
+    const inputArgs = [];
     const filterParts = [];
     const streamLabels = [];
 
@@ -410,9 +410,10 @@ const renderReelVideo = async ({
       };
     };
 
-    imagePaths.forEach((_, index) => {
+    imagePaths.forEach((imagePath, index) => {
       const isLast = index === imagePaths.length - 1;
       const seconds = isLast ? safeDuration : safeDuration + safeTransition;
+      inputArgs.push("-loop", "1", "-t", String(seconds), "-i", imagePath);
       const frameCount = Math.max(1, Math.round(seconds * fps));
       const { startZoom, stepExpr } = buildZoomExpression(frameCount);
       const inputLabel = `[${index}:v]`;
@@ -465,6 +466,7 @@ const renderReelVideo = async ({
       String(fps),
       "-c:v",
       "libx264",
+      "-shortest",
       "-movflags",
       "+faststart",
       outputPath,
