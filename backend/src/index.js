@@ -712,10 +712,21 @@ app.post(
       const tagParams = new URLSearchParams();
       const deliveryType =
         typeof type === "string" && type.trim() ? type.trim() : "upload";
+      console.info("[reel] update request", {
+        accountId: accountId.toString(),
+        publicId,
+        deliveryType,
+        enabled: parsedEnabled,
+      });
       tagParams.append("public_ids[]", publicId);
       tagParams.append("type", deliveryType);
       const isAdd = parsedEnabled === true;
       const apiUrl = new URL(baseUrl);
+      console.info("[reel] tag update request", {
+        method: isAdd ? "POST" : "DELETE",
+        url: apiUrl.toString(),
+        body: isAdd ? tagParams.toString() : null,
+      });
       const requestInit = {
         method: isAdd ? "POST" : "DELETE",
         headers: {
@@ -732,9 +743,17 @@ app.post(
       }
 
       const response = await fetch(apiUrl, requestInit);
+      console.info("[reel] tag update response", {
+        status: response.status,
+        ok: response.ok,
+      });
 
       if (!response.ok) {
         const errorBody = await response.text();
+        console.error("[reel] tag update failed", {
+          status: response.status,
+          body: errorBody,
+        });
         return res.status(response.status).json({
           error: "cloudinary-update-failed",
           details: errorBody || null,
@@ -749,6 +768,10 @@ app.post(
         "context",
         `reel=${parsedEnabled === true ? "true" : "false"}`
       );
+      console.info("[reel] context update request", {
+        url: contextUrl,
+        body: contextParams.toString(),
+      });
       const contextResponse = await fetch(contextUrl, {
         method: "POST",
         headers: {
@@ -757,9 +780,17 @@ app.post(
         },
         body: contextParams.toString(),
       });
+      console.info("[reel] context update response", {
+        status: contextResponse.status,
+        ok: contextResponse.ok,
+      });
 
       if (!contextResponse.ok) {
         const errorBody = await contextResponse.text();
+        console.error("[reel] context update failed", {
+          status: contextResponse.status,
+          body: errorBody,
+        });
         return res.status(contextResponse.status).json({
           error: "cloudinary-metadata-update-failed",
           details: errorBody || null,
