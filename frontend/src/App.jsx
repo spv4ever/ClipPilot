@@ -926,7 +926,17 @@ export default function App() {
                 />
               </label>
               <label>
-                Velocidad de zoom
+                <span className="label-with-tooltip">
+                  Velocidad de zoom
+                  <span
+                    className="tooltip"
+                    data-tooltip="0.05 es un zoom lento recomendado."
+                    aria-label="0.05 es un zoom lento recomendado."
+                    role="img"
+                  >
+                    ℹ
+                  </span>
+                </span>
                 <input
                   type="number"
                   min="0.01"
@@ -935,7 +945,6 @@ export default function App() {
                   value={reelZoomAmount}
                   onChange={(event) => setReelZoomAmount(event.target.value)}
                 />
-                <span className="hint">0.05 es un zoom lento recomendado.</span>
               </label>
               <button
                 className="primary"
