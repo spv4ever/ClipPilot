@@ -466,6 +466,22 @@ const renderReelVideo = async ({
       totalDuration > 0 && audioFiles.length > 0
         ? audioFiles[Math.floor(Math.random() * audioFiles.length)]
         : null;
+    logProgress("render-audio-scan", {
+      audioDirectory,
+      audioCount: audioFiles.length,
+      totalDuration,
+      selectedAudio,
+    });
+    if (!selectedAudio) {
+      logProgress("render-audio-skip", {
+        reason:
+          totalDuration <= 0
+            ? "empty-duration"
+            : audioFiles.length === 0
+              ? "no-audio-files"
+              : "no-selection",
+      });
+    }
 
     const inputArgs = [];
     const filterParts = [];
@@ -530,6 +546,11 @@ const renderReelVideo = async ({
       const maxStart = hasRoomForStart ? audioDuration - totalDuration : 0;
       const startTime = hasRoomForStart ? Math.random() * maxStart : 0;
       const audioStart = Math.max(0, startTime).toFixed(3);
+      logProgress("render-audio-selected", {
+        audioDuration,
+        audioStart,
+        hasRoomForStart,
+      });
       if (!hasRoomForStart) {
         inputArgs.push("-stream_loop", "-1");
       }
