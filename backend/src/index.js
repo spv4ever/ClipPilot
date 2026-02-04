@@ -569,7 +569,13 @@ const renderReelVideo = async ({
       audioLabel = "[audio]";
     }
 
-    const filterComplex = filterParts.join(";");
+    const filterComplex = filterParts
+      .map((part) => (typeof part === "string" ? part.trim() : ""))
+      .filter((part) => part.length > 0)
+      .join(";");
+    if (!filterComplex) {
+      throw new Error("ffmpeg-filter-empty");
+    }
 
     logProgress("render-ffmpeg-start", {
       imageCount: imagePaths.length,
