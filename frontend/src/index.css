@@ -471,6 +471,13 @@ input {
   background: rgba(15, 23, 42, 0.6);
 }
 
+.reel-stats {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
 .reel-generator-controls label {
   display: flex;
   flex-direction: column;
