@@ -448,6 +448,7 @@ export default function App() {
       setReelCreateError("Selecciona las imágenes que quieres usar.");
       return;
     }
+    const finalImages = accountImages.filter((image) => image.isFinal);
     if (isRandomSelection && (!Number.isFinite(randomCount) || randomCount <= 0)) {
       setReelCreateError("Ingresa un número válido de imágenes.");
       return;
@@ -460,9 +461,9 @@ export default function App() {
       setReelCreateError("Ingresa una velocidad de zoom válida.");
       return;
     }
-    if (!isRandomSelection && !selectedReelImages[selectedReelImages.length - 1]?.isFinal) {
+    if (!isRandomSelection && finalImages.length === 0) {
       setReelCreateError(
-        "La última imagen seleccionada debe tener la etiqueta Final."
+        "No hay imágenes con la etiqueta Final disponibles para cerrar el reel."
       );
       return;
     }
@@ -470,6 +471,24 @@ export default function App() {
     try {
       setReelCreateStatus("loading");
       setReelCreateError("");
+      const manualImageIds = selectedReelImages.map((image) => image.publicId);
+      const manualImageIdsWithFinal = isRandomSelection
+        ? []
+        : (() => {
+            const finalImagePool = finalImages.filter(
+              (image) => !manualImageIds.includes(image.publicId)
+            );
+            const eligibleFinalImages =
+              finalImagePool.length > 0 ? finalImagePool : finalImages;
+            const randomFinalImage =
+              eligibleFinalImages[
+                Math.floor(Math.random() * eligibleFinalImages.length)
+              ];
+            return [
+              ...manualImageIds.filter((id) => id !== randomFinalImage.publicId),
+              randomFinalImage.publicId,
+            ];
+          })();
       const response = await fetch(
         `${backendUrl}/api/accounts/${selectedAccount.id}/reels`,
         {
@@ -481,7 +500,7 @@ export default function App() {
           body: JSON.stringify({
             ...(isRandomSelection
               ? { count: randomCount }
-              : { imagePublicIds: selectedReelImages.map((image) => image.publicId) }),
+              : { imagePublicIds: manualImageIdsWithFinal }),
             secondsPerImage,
             zoomAmount,
           }),
@@ -1037,7 +1056,7 @@ export default function App() {
                 <h2>Generar reel</h2>
                 <p className="subtitle">
                   Selecciona las imágenes que quieres usar y asegúrate de dejar
-                  una imagen con tag final al final para cerrar el video.
+                  el cierre con una imagen final (se añadirá automáticamente).
                 </p>
               </div>
               <button
@@ -1061,7 +1080,7 @@ export default function App() {
                   </p>
                   <p className="muted">
                     {reelSelectionMode === "manual"
-                      ? "La última imagen debe tener la etiqueta Final."
+                      ? "Añadiremos automáticamente una imagen Final aleatoria para cerrar el reel."
                       : "Seleccionaremos imágenes aleatorias y cerraremos con la imagen final."}
                   </p>
                 </div>
@@ -1075,7 +1094,11 @@ export default function App() {
                   </button>
                 )}
               </div>
-              <div className="filter-tabs" role="tablist" aria-label="Modo de selección">
+              <div
+                className="filter-tabs reel-mode-tabs"
+                role="tablist"
+                aria-label="Modo de selección"
+              >
                 <button
                   className={`secondary small${
                     reelSelectionMode === "manual" ? " active" : ""

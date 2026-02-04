@@ -267,6 +267,12 @@ h3 {
   background: rgba(15, 23, 42, 0.6);
 }
 
+.reel-mode-tabs {
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
 .account-list {
   display: flex;
   flex-direction: column;
