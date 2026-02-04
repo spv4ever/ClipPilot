@@ -361,11 +361,18 @@ const renderReelVideo = async ({
     }
 
     const listPath = path.join(tempDir, "inputs.txt");
+    const formatConcatPath = (value) => {
+      const normalized = value.replace(/\\/g, "/");
+      const escaped = normalized.replace(/'/g, "'\\''");
+      return `'${escaped}'`;
+    };
     const listLines = imagePaths.flatMap((imagePath) => [
-      `file ${JSON.stringify(imagePath)}`,
+      `file ${formatConcatPath(imagePath)}`,
       `duration ${durationSeconds}`,
     ]);
-    listLines.push(`file ${JSON.stringify(imagePaths[imagePaths.length - 1])}`);
+    listLines.push(
+      `file ${formatConcatPath(imagePaths[imagePaths.length - 1])}`,
+    );
     await fs.writeFile(listPath, `${listLines.join("\n")}\n`);
 
     const filter = [
