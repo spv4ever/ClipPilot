@@ -1517,20 +1517,42 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
           .json({ error: "invalid-selection", step: "images" });
       }
 
-      const lastResource = selectedResources[selectedResources.length - 1];
-      if (!lastResource.tags?.includes("final")) {
-        logStep("final-not-last", { publicId: lastResource.public_id });
+      const finalImages = await fetchCloudinaryImages({
+        account,
+        apiSecret,
+        maxResults: 50,
+        expression: "resource_type:image AND tags=final",
+      });
+
+      if (finalImages.length === 0) {
+        logStep("no-final-image");
         return res.status(409).json({
-          error: "final-not-last",
+          error: "no-final-image",
           step: "images",
         });
       }
 
-      selected = selectedResources.map((resource) => ({
-        publicId: resource.public_id,
-        secureUrl: resource.secure_url,
-        url: resource.url,
-      }));
+      const selectedPublicIds = new Set(
+        selectedResources.map((resource) => resource.public_id)
+      );
+      const availableFinalImages = finalImages.filter(
+        (resource) => !selectedPublicIds.has(resource.public_id)
+      );
+      const finalResource =
+        shuffleArray(availableFinalImages)[0] ?? shuffleArray(finalImages)[0];
+
+      selected = [
+        ...selectedResources.map((resource) => ({
+          publicId: resource.public_id,
+          secureUrl: resource.secure_url,
+          url: resource.url,
+        })),
+        {
+          publicId: finalResource.public_id,
+          secureUrl: finalResource.secure_url,
+          url: finalResource.url,
+        },
+      ];
     } else {
       logStep("fetch-images", { requestedCount });
       const nonFinalCount = Math.max(0, requestedCount - 1);
