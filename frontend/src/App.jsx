@@ -1072,9 +1072,19 @@ export default function App() {
                 Revisa los reels creados con tus imágenes.
               </p>
             </div>
-            <button className="secondary" onClick={() => setView("home")}>
-              Volver a inicio
-            </button>
+            <div className="header-actions">
+              {selectedAccount && (
+                <button
+                  className="secondary"
+                  onClick={() => setView("account-images")}
+                >
+                  Volver a imágenes
+                </button>
+              )}
+              <button className="secondary" onClick={() => setView("home")}>
+                Volver a inicio
+              </button>
+            </div>
           </header>
 
           <section className="card">
