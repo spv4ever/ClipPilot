@@ -1794,6 +1794,78 @@ app.get(
   }
 );
 
+app.get(
+  "/api/accounts/:id/reels/summary",
+  ensureAuthenticated,
+  async (req, res, next) => {
+    try {
+      const accounts = await getAccountsCollection();
+      if (!accounts) {
+        return res.status(503).json({ error: "storage-unavailable" });
+      }
+
+      const { id } = req.params;
+      let accountId;
+      try {
+        accountId = new ObjectId(id);
+      } catch (err) {
+        return res.status(400).json({ error: "invalid-account" });
+      }
+
+      const account = await accounts.findOne({
+        _id: accountId,
+        userId: req.user.id,
+      });
+      if (!account) {
+        return res.status(404).json({ error: "account-not-found" });
+      }
+
+      const apiSecret = decryptSecret(account.apiSecret);
+      if (!account.cloudName || !account.apiKey || !apiSecret) {
+        return res.status(400).json({ error: "cloudinary-credentials-missing" });
+      }
+
+      const authHeader = Buffer.from(`${account.apiKey}:${apiSecret}`).toString(
+        "base64"
+      );
+      const apiUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/resources/search`;
+
+      const fetchCount = async (expression) => {
+        const response = await fetch(apiUrl, {
+          method: "POST",
+          headers: {
+            Authorization: `Basic ${authHeader}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ expression, max_results: 1 }),
+        });
+
+        if (!response.ok) {
+          return null;
+        }
+
+        const result = await response.json();
+        const total = Number(result.total_count);
+        return Number.isFinite(total) ? total : null;
+      };
+
+      const [totalCount, reelCount] = await Promise.all([
+        fetchCount("resource_type:image"),
+        fetchCount("resource_type:image AND tags=reel"),
+      ]);
+
+      const availableCount =
+        Number.isFinite(totalCount) && Number.isFinite(reelCount)
+          ? Math.max(totalCount - reelCount, 0)
+          : null;
+
+      return res.json({ totalCount, reelCount, availableCount });
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
 app.listen(port, () => {
   console.log(`Backend listening on http://localhost:${port}`);
 });

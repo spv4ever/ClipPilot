@@ -45,6 +45,9 @@ export default function App() {
   const [imageFilter, setImageFilter] = useState("all");
   const [imageCounts, setImageCounts] = useState({});
   const [imageCountsStatus, setImageCountsStatus] = useState("idle");
+  const [reelImageStats, setReelImageStats] = useState(null);
+  const [reelImageStatsStatus, setReelImageStatsStatus] = useState("idle");
+  const [reelImageStatsError, setReelImageStatsError] = useState("");
   const [reelUpdating, setReelUpdating] = useState({});
   const [finalUpdating, setFinalUpdating] = useState({});
   const [selectedReelImages, setSelectedReelImages] = useState([]);
@@ -65,6 +68,8 @@ export default function App() {
     () => new Set(selectedReelImages.map((image) => image.publicId)),
     [selectedReelImages]
   );
+  const formatCount = (value) =>
+    Number.isFinite(value) ? value.toLocaleString("es-ES") : "N/D";
 
   const isAuthenticated = status === "authenticated" && user;
 
@@ -194,6 +199,44 @@ export default function App() {
       });
     } finally {
       setImageCountsStatus("idle");
+    }
+  };
+
+  const loadReelImageStats = async (accountId) => {
+    if (!accountId) {
+      setReelImageStats(null);
+      return;
+    }
+
+    try {
+      setReelImageStatsStatus("loading");
+      setReelImageStatsError("");
+      const response = await fetch(
+        `${backendUrl}/api/accounts/${accountId}/reels/summary`,
+        {
+          credentials: "include",
+        }
+      );
+
+      if (handleUnauthorized(response)) {
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error("stats-failed");
+      }
+
+      const payload = await response.json();
+      setReelImageStats({
+        totalCount: payload.totalCount ?? null,
+        reelCount: payload.reelCount ?? null,
+        availableCount: payload.availableCount ?? null,
+      });
+      setReelImageStatsStatus("success");
+    } catch (err) {
+      console.error(err);
+      setReelImageStatsError("No se pudo cargar el recuento de imágenes.");
+      setReelImageStatsStatus("error");
     }
   };
 
@@ -331,6 +374,14 @@ export default function App() {
   }, [accounts, accountsStatus, isAuthenticated]);
 
   useEffect(() => {
+    if (!isAuthenticated || !selectedAccount?.id) {
+      setReelImageStats(null);
+      return;
+    }
+    loadReelImageStats(selectedAccount.id);
+  }, [isAuthenticated, selectedAccount?.id]);
+
+  useEffect(() => {
     if (!selectedReelImages.length) {
       return;
     }
@@ -417,6 +468,7 @@ export default function App() {
     setSelectedReelImages([]);
     setView("account-images");
     loadImages({ accountId: account.id });
+    loadReelImageStats(account.id);
   };
 
   const handleNextPage = () => {
@@ -685,6 +737,7 @@ export default function App() {
             : item
         )
       );
+      loadReelImageStats(selectedAccount.id);
     } catch (err) {
       console.error(err);
       setImagesError("No se pudo actualizar la etiqueta Reel.");
@@ -1058,6 +1111,22 @@ export default function App() {
                       ? "Añadiremos automáticamente una imagen Final aleatoria para cerrar el reel."
                       : "Seleccionaremos imágenes aleatorias y cerraremos con la imagen final."}
                   </p>
+                  <div className="reel-stats">
+                    {reelImageStatsStatus === "loading" && (
+                      <p className="muted">Cargando recuento de imágenes...</p>
+                    )}
+                    {reelImageStatsStatus !== "loading" && (
+                      <p className="muted">
+                        Imágenes totales: {formatCount(reelImageStats?.totalCount)}{" "}
+                        · Imágenes usadas en reels:{" "}
+                        {formatCount(reelImageStats?.reelCount)} · Imágenes sin
+                        usar en reels: {formatCount(reelImageStats?.availableCount)}
+                      </p>
+                    )}
+                    {reelImageStatsError && (
+                      <p className="error">{reelImageStatsError}</p>
+                    )}
+                  </div>
                 </div>
                 {reelSelectionMode === "manual" && selectedReelImages.length > 0 && (
                   <button
