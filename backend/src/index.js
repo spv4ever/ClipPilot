@@ -310,13 +310,24 @@ const buildReelTransformation = (images) => {
     .join("/");
 };
 
-const downloadImageToFile = async (url, destination) => {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`image-download-failed:${response.status}`);
+const downloadImageToFile = async (url, destination, { timeoutMs = 30000 } = {}) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) {
+      throw new Error(`image-download-failed:${response.status}`);
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    await fs.writeFile(destination, buffer);
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`image-download-timeout:${timeoutMs}`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  const buffer = Buffer.from(await response.arrayBuffer());
-  await fs.writeFile(destination, buffer);
 };
 
 const runFfmpeg = async (args) =>
@@ -350,16 +361,31 @@ const renderReelVideo = async ({
   fps = 30,
   width = 1080,
   height = 1920,
+  onProgress,
 }) => {
+  const logProgress = typeof onProgress === "function" ? onProgress : () => {};
   const baseTempDir = path.join(process.cwd(), "tmp", "reels");
   await fs.mkdir(baseTempDir, { recursive: true });
   const tempDir = await fs.mkdtemp(path.join(baseTempDir, "clippilot-reel-"));
   try {
+    logProgress("render-temp-dir", { imageCount: images.length });
     const imagePaths = [];
     for (let index = 0; index < images.length; index += 1) {
       const image = images[index];
       const imagePath = path.join(tempDir, `frame_${index + 1}.jpg`);
-      await downloadImageToFile(image.secureUrl || image.url, imagePath);
+      const downloadUrl = image.secureUrl || image.url;
+      const downloadStart = Date.now();
+      logProgress("render-download-start", {
+        index: index + 1,
+        total: images.length,
+        url: downloadUrl,
+      });
+      await downloadImageToFile(downloadUrl, imagePath);
+      logProgress("render-download-complete", {
+        index: index + 1,
+        total: images.length,
+        durationMs: Date.now() - downloadStart,
+      });
       imagePaths.push(imagePath);
     }
 
@@ -421,6 +447,13 @@ const renderReelVideo = async ({
 
     const filterComplex = filterParts.join(";");
 
+    logProgress("render-ffmpeg-start", {
+      imageCount: imagePaths.length,
+      fps,
+      durationSeconds: safeDuration,
+      transitionSeconds: safeTransition,
+    });
+    const ffmpegStart = Date.now();
     await runFfmpeg([
       "-y",
       ...inputArgs,
@@ -436,6 +469,7 @@ const renderReelVideo = async ({
       "+faststart",
       outputPath,
     ]);
+    logProgress("render-ffmpeg-complete", { durationMs: Date.now() - ffmpegStart });
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
     try {
@@ -1210,6 +1244,7 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
         outputPath: tempOutputPath,
         durationSeconds: secondsPerImage,
         zoomAmount,
+        onProgress: (step, details) => logStep(step, details),
       });
       logStep("render-local-complete", { publicId });
 
