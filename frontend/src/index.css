@@ -607,6 +607,12 @@ input {
   box-shadow: 0 0 18px rgba(56, 189, 248, 0.35);
 }
 
+.final-toggle.active {
+  border-color: rgba(244, 114, 182, 0.9);
+  color: #ffe4f2;
+  box-shadow: 0 0 18px rgba(244, 114, 182, 0.35);
+}
+
 .modal {
   position: fixed;
   inset: 0;

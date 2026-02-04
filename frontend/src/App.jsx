@@ -46,6 +46,7 @@ export default function App() {
   const [imageCounts, setImageCounts] = useState({});
   const [imageCountsStatus, setImageCountsStatus] = useState("idle");
   const [reelUpdating, setReelUpdating] = useState({});
+  const [finalUpdating, setFinalUpdating] = useState({});
   const [reelCount, setReelCount] = useState(5);
   const [reelSecondsPerImage, setReelSecondsPerImage] = useState(2);
   const [reelZoomAmount, setReelZoomAmount] = useState(0.05);
@@ -622,6 +623,59 @@ export default function App() {
     }
   };
 
+  const handleToggleFinal = async (image) => {
+    if (!selectedAccount) return;
+    const nextEnabled = !image.isFinal;
+    setFinalUpdating((prev) => ({ ...prev, [image.id]: true }));
+    setImagesError("");
+    try {
+      const response = await fetch(
+        `${backendUrl}/api/accounts/${selectedAccount.id}/images/${encodeURIComponent(
+          image.publicId
+        )}/final`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ enabled: nextEnabled, type: image.type }),
+        }
+      );
+
+      if (handleUnauthorized(response)) {
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error("update-failed");
+      }
+
+      setAccountImages((prev) =>
+        prev.map((item) =>
+          item.id === image.id
+            ? {
+                ...item,
+                isFinal: nextEnabled,
+                tags: nextEnabled
+                  ? Array.from(new Set([...(item.tags || []), "final"]))
+                  : (item.tags || []).filter((tag) => tag !== "final"),
+              }
+            : item
+        )
+      );
+    } catch (err) {
+      console.error(err);
+      setImagesError("No se pudo actualizar la etiqueta Final.");
+    } finally {
+      setFinalUpdating((prev) => {
+        const next = { ...prev };
+        delete next[image.id];
+        return next;
+      });
+    }
+  };
+
   return (
     <div className="app">
       <header className="topbar">
@@ -1061,6 +1115,16 @@ export default function App() {
                         disabled={reelUpdating[image.id]}
                       >
                         {image.isReel ? "Reel activo" : "Reel"}
+                      </button>
+                      <button
+                        className={`secondary small final-toggle${
+                          image.isFinal ? " active" : ""
+                        }`}
+                        type="button"
+                        onClick={() => handleToggleFinal(image)}
+                        disabled={finalUpdating[image.id]}
+                      >
+                        {image.isFinal ? "Final activo" : "Final"}
                       </button>
                     </div>
                   </div>

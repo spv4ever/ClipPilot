@@ -1030,6 +1030,12 @@ app.get("/api/images", ensureAuthenticated, async (req, res, next) => {
         resource.metadata?.reel === "true" ||
         resource.context?.custom?.reel === true ||
         resource.context?.custom?.reel === "true",
+      isFinal:
+        (Array.isArray(resource.tags) && resource.tags.includes("final")) ||
+        resource.metadata?.final === true ||
+        resource.metadata?.final === "true" ||
+        resource.context?.custom?.final === true ||
+        resource.context?.custom?.final === "true",
     }));
 
     return res.json({ images });
@@ -1109,6 +1115,12 @@ app.get("/api/accounts/:id/images", ensureAuthenticated, async (req, res, next) 
         resource.metadata?.reel === "true" ||
         resource.context?.custom?.reel === true ||
         resource.context?.custom?.reel === "true",
+      isFinal:
+        (Array.isArray(resource.tags) && resource.tags.includes("final")) ||
+        resource.metadata?.final === true ||
+        resource.metadata?.final === "true" ||
+        resource.context?.custom?.final === true ||
+        resource.context?.custom?.final === "true",
     }));
 
     return res.json({ images, nextCursor: result.next_cursor || null });
@@ -1253,6 +1265,107 @@ app.post(
       }
 
       return res.json({ ok: true, isReel: parsedEnabled });
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+app.post(
+  "/api/accounts/:id/images/:publicId(*)/final",
+  ensureAuthenticated,
+  async (req, res, next) => {
+    try {
+      const accounts = await getAccountsCollection();
+      if (!accounts) {
+        return res.status(503).json({ error: "storage-unavailable" });
+      }
+
+      const { id, publicId } = req.params;
+      const { enabled, type } = req.body || {};
+      const parsedEnabled =
+        typeof enabled === "boolean"
+          ? enabled
+          : typeof enabled === "string"
+            ? enabled.toLowerCase() === "true"
+            : null;
+      if (parsedEnabled === null) {
+        return res.status(400).json({ error: "invalid-request" });
+      }
+
+      let accountId;
+      try {
+        accountId = new ObjectId(id);
+      } catch (err) {
+        return res.status(400).json({ error: "invalid-account" });
+      }
+
+      const account = await accounts.findOne({
+        _id: accountId,
+        userId: req.user.id,
+      });
+      if (!account) {
+        return res.status(404).json({ error: "account-not-found" });
+      }
+
+      const apiSecret = decryptSecret(account.apiSecret);
+      if (!account.cloudName || !account.apiKey || !apiSecret) {
+        return res.status(400).json({ error: "cloudinary-credentials-missing" });
+      }
+
+      const baseUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/image/tags`;
+      const tagParams = new URLSearchParams();
+      const deliveryType =
+        typeof type === "string" && type.trim() ? type.trim() : "upload";
+      console.info("[final] update request", {
+        accountId: accountId.toString(),
+        publicId,
+        deliveryType,
+        enabled: parsedEnabled,
+      });
+      const isAdd = parsedEnabled === true;
+      const command = isAdd ? "add" : "remove";
+      const timestamp = Math.floor(Date.now() / 1000);
+      const signatureParams = {
+        command,
+        tag: "final",
+        timestamp,
+        type: deliveryType,
+        public_ids: publicId,
+      };
+      const signature = buildCloudinarySignature(signatureParams, apiSecret);
+
+      tagParams.append("command", command);
+      tagParams.append("tag", "final");
+      tagParams.append("public_ids[]", publicId);
+      tagParams.append("type", deliveryType);
+      tagParams.append("timestamp", String(timestamp));
+      tagParams.append("api_key", account.apiKey);
+      tagParams.append("signature", signature);
+      const apiUrl = new URL(baseUrl);
+      const requestInit = {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: tagParams.toString(),
+      };
+
+      const response = await fetch(apiUrl, requestInit);
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        console.error("[final] tag update failed", {
+          status: response.status,
+          body: errorBody,
+        });
+        return res.status(response.status).json({
+          error: "cloudinary-update-failed",
+          details: errorBody || null,
+        });
+      }
+
+      return res.json({ ok: true, isFinal: parsedEnabled });
     } catch (error) {
       return next(error);
     }
