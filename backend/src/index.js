@@ -418,7 +418,7 @@ const renderReelVideo = async ({
 
     imagePaths.forEach((imagePath, index) => {
       const seconds = safeDuration;
-      inputArgs.push("-loop", "1", "-t", String(seconds), "-i", imagePath);
+      inputArgs.push("-i", imagePath);
       const frameCount = Math.max(1, Math.round(seconds * fps));
       const { startZoom, stepExpr } = buildZoomExpression(frameCount);
       const inputLabel = `[${index}:v]`;
