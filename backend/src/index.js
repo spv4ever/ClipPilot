@@ -558,13 +558,13 @@ const renderReelVideo = async ({
 
       const audioInputIndex = imagePaths.length;
       const audioFadeOutStart = Math.max(0, totalDuration - fadeDuration).toFixed(3);
-      const audioFilters = [
-        `[${audioInputIndex}:a]atrim=0:${totalDuration.toFixed(3)}`,
-        "asetpts=PTS-STARTPTS",
-        `afade=t=in:st=0:d=${fadeDuration}`,
-        `afade=t=out:st=${audioFadeOutStart}:d=${fadeDuration}`,
-        "[audio]",
-      ].join(",");
+      const audioFilters =
+        `[${audioInputIndex}:a]` +
+        `atrim=0:${totalDuration.toFixed(3)},` +
+        "asetpts=PTS-STARTPTS," +
+        `afade=t=in:st=0:d=${fadeDuration},` +
+        `afade=t=out:st=${audioFadeOutStart}:d=${fadeDuration}` +
+        "[audio]";
       filterParts.push(audioFilters);
       audioLabel = "[audio]";
     }
