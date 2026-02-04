@@ -1334,29 +1334,59 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
     }
 
     logStep("fetch-images", { requestedCount });
-    const availableImages = await fetchCloudinaryImages({
+    const nonFinalCount = Math.max(0, requestedCount - 1);
+    const availableImages =
+      nonFinalCount > 0
+        ? await fetchCloudinaryImages({
+            account,
+            apiSecret,
+            maxResults: Math.max(50, nonFinalCount * 3),
+            expression: "resource_type:image AND -tags=reel",
+          })
+        : [];
+    const finalImages = await fetchCloudinaryImages({
       account,
       apiSecret,
-      maxResults: Math.max(50, requestedCount * 3),
-      expression: "resource_type:image AND -tags=reel",
+      maxResults: 50,
+      expression: "resource_type:image AND tags=final",
     });
 
-    if (availableImages.length < requestedCount) {
-      logStep("not-enough-images", { available: availableImages.length });
+    if (finalImages.length === 0) {
+      logStep("no-final-image");
       return res.status(409).json({
-        error: "not-enough-images",
+        error: "no-final-image",
         step: "images",
-        available: availableImages.length,
       });
     }
 
-    const selected = shuffleArray(availableImages)
-      .slice(0, requestedCount)
-      .map((resource) => ({
-        publicId: resource.public_id,
-        secureUrl: resource.secure_url,
-        url: resource.url,
-      }));
+    const finalResource = shuffleArray(finalImages)[0];
+    const filteredAvailableImages = availableImages.filter(
+      (resource) => resource.public_id !== finalResource.public_id
+    );
+
+    if (filteredAvailableImages.length < nonFinalCount) {
+      logStep("not-enough-images", { available: filteredAvailableImages.length });
+      return res.status(409).json({
+        error: "not-enough-images",
+        step: "images",
+        available: filteredAvailableImages.length,
+      });
+    }
+
+    const selected = [
+      ...shuffleArray(filteredAvailableImages)
+        .slice(0, nonFinalCount)
+        .map((resource) => ({
+          publicId: resource.public_id,
+          secureUrl: resource.secure_url,
+          url: resource.url,
+        })),
+      {
+        publicId: finalResource.public_id,
+        secureUrl: finalResource.secure_url,
+        url: finalResource.url,
+      },
+    ];
 
     logStep("render-local-start", { selectedCount: selected.length });
     const timestamp = Math.floor(Date.now() / 1000);

@@ -432,6 +432,11 @@ export default function App() {
         }
 
         if (response.status === 409) {
+          if (payload?.error === "no-final-image") {
+            throw new Error(
+              "No hay imágenes con la tag final disponibles para cerrar el reel."
+            );
+          }
           throw new Error(
             `No hay suficientes imágenes sin tag reel. Disponibles: ${payload?.available ?? 0}.`
           );
@@ -890,8 +895,9 @@ export default function App() {
               <div>
                 <h2>Generar reel</h2>
                 <p className="subtitle">
-                  Seleccionaremos imágenes aleatorias sin tag reel y crearemos un
-                  video con zoom alternado.
+                  Seleccionaremos imágenes aleatorias sin tag reel y añadiremos
+                  una imagen con tag final para cerrar el video con zoom
+                  alternado.
                 </p>
               </div>
               <button
