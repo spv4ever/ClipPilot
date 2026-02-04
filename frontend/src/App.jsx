@@ -42,6 +42,7 @@ export default function App() {
   const [cursorStack, setCursorStack] = useState([]);
   const [currentCursor, setCurrentCursor] = useState(null);
   const [lightboxImage, setLightboxImage] = useState(null);
+  const [imageFilter, setImageFilter] = useState("all");
   const [imageCounts, setImageCounts] = useState({});
   const [imageCountsStatus, setImageCountsStatus] = useState("idle");
   const [reelUpdating, setReelUpdating] = useState({});
@@ -307,12 +308,20 @@ export default function App() {
     [cursorStack.length]
   );
 
+  const filteredImages = useMemo(() => {
+    if (imageFilter === "reels") {
+      return accountImages.filter((image) => image.isReel);
+    }
+    return accountImages;
+  }, [accountImages, imageFilter]);
+
   const handleSelectAccount = (account) => {
     setSelectedAccount(account);
     setCursorStack([]);
     setCurrentCursor(null);
     setNextCursor(null);
     setAccountImages([]);
+    setImageFilter("all");
     setView("account-images");
     loadImages({ accountId: account.id });
   };
@@ -729,6 +738,26 @@ export default function App() {
                   Página {currentPage}. Mostramos 50 imágenes por bloque.
                 </p>
               </div>
+              <div className="filter-tabs" role="tablist" aria-label="Filtrar imágenes">
+                <button
+                  className={`secondary small${imageFilter === "all" ? " active" : ""}`}
+                  type="button"
+                  onClick={() => setImageFilter("all")}
+                  role="tab"
+                  aria-selected={imageFilter === "all"}
+                >
+                  Todas
+                </button>
+                <button
+                  className={`secondary small${imageFilter === "reels" ? " active" : ""}`}
+                  type="button"
+                  onClick={() => setImageFilter("reels")}
+                  role="tab"
+                  aria-selected={imageFilter === "reels"}
+                >
+                  Reels
+                </button>
+              </div>
               <div className="pagination">
                 <button
                   className="secondary"
@@ -758,9 +787,9 @@ export default function App() {
             {imagesStatus === "loading" && (
               <p className="muted">Cargando imágenes...</p>
             )}
-            {accountImages.length > 0 ? (
+            {filteredImages.length > 0 ? (
               <div className="image-grid image-grid--large">
-                {accountImages.map((image) => (
+                {filteredImages.map((image) => (
                   <div className="image-card" key={image.id}>
                     <div className="image-thumb">
                       <img src={image.secureUrl || image.url} alt={image.publicId} />
@@ -792,7 +821,9 @@ export default function App() {
               </div>
             ) : (
               <p className="empty">
-                No se encontraron imágenes para esta cuenta.
+                {accountImages.length > 0
+                  ? "No hay imágenes en este filtro."
+                  : "No se encontraron imágenes para esta cuenta."}
               </p>
             )}
           </section>
