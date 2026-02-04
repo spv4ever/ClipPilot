@@ -447,14 +447,16 @@ input {
 }
 
 .reel-generator-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 1rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: end;
+  gap: 1rem 1.5rem;
 }
 
 .reel-generator-controls label {
-  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
 }
 
 .reel-generator-controls .hint {
@@ -462,6 +464,12 @@ input {
   margin-top: 0.35rem;
   font-size: 0.75rem;
   color: rgba(148, 163, 184, 0.8);
+}
+
+.reel-generator-controls button {
+  justify-self: end;
+  align-self: end;
+  min-width: 170px;
 }
 
 .reel-grid {
