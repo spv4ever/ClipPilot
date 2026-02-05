@@ -154,44 +154,61 @@ export default function App() {
       let currentCursorValue = cursor || null;
       let stack = baseStack ?? cursorStack;
       const shouldUpdateStack = baseStack !== undefined || allowSkipEmpty;
-      let { images, nextCursor, unauthorized } = await fetchImagesPage({
-        accountId,
-        cursor: currentCursorValue,
-        limit,
-      });
+      const shouldFilter = filter !== "all";
+      const matchesFilter = (image) =>
+        filter === "reels" ? image.isReel : !image.isReel;
+      let collectedImages = [];
+      let nextCursor = null;
+      let pageStartCursor = currentCursorValue;
+      let foundMatchPage = !shouldFilter;
+      const shouldSkipEmpty = allowSkipEmpty && shouldFilter;
 
-      if (unauthorized) {
-        setAccountImages([]);
-        return;
-      }
+      while (true) {
+        const result = await fetchImagesPage({
+          accountId,
+          cursor: currentCursorValue,
+          limit,
+        });
+        if (result.unauthorized) {
+          setAccountImages([]);
+          return;
+        }
 
-      if (allowSkipEmpty && filter !== "all") {
-        let hasMatches = images.some((image) =>
-          filter === "reels" ? image.isReel : !image.isReel
-        );
-        while (!hasMatches && nextCursor) {
+        const pageImages = result.images;
+        nextCursor = result.nextCursor;
+
+        if (!shouldFilter) {
+          collectedImages = pageImages;
+          pageStartCursor = currentCursorValue;
+          break;
+        }
+
+        const pageMatches = pageImages.filter(matchesFilter);
+        if (pageMatches.length === 0 && shouldSkipEmpty && nextCursor) {
           stack = [...stack, currentCursorValue];
           currentCursorValue = nextCursor;
-          const result = await fetchImagesPage({
-            accountId,
-            cursor: currentCursorValue,
-            limit,
-          });
-          if (result.unauthorized) {
-            setAccountImages([]);
-            return;
-          }
-          images = result.images;
-          nextCursor = result.nextCursor;
-          hasMatches = images.some((image) =>
-            filter === "reels" ? image.isReel : !image.isReel
-          );
+          continue;
         }
+
+        if (!foundMatchPage) {
+          pageStartCursor = currentCursorValue;
+          foundMatchPage = true;
+        }
+
+        if (pageMatches.length > 0) {
+          collectedImages = [...collectedImages, ...pageMatches].slice(0, limit);
+        }
+
+        if (collectedImages.length >= limit || !nextCursor) {
+          break;
+        }
+
+        currentCursorValue = nextCursor;
       }
 
-      setAccountImages(images);
+      setAccountImages(collectedImages);
       setNextCursor(nextCursor || null);
-      setCurrentCursor(currentCursorValue);
+      setCurrentCursor(pageStartCursor);
       if (shouldUpdateStack) {
         setCursorStack(stack);
       }
@@ -562,6 +579,7 @@ export default function App() {
       cursor: nextCursor,
       filter: imageFilter,
       limit: imagePageSize,
+      allowSkipEmpty: imageFilter !== "all",
     });
   };
 
@@ -575,6 +593,7 @@ export default function App() {
       cursor,
       filter: imageFilter,
       limit: imagePageSize,
+      allowSkipEmpty: imageFilter !== "all",
       baseStack: updatedStack,
     });
   };
@@ -586,6 +605,7 @@ export default function App() {
       cursor: currentCursor,
       filter: imageFilter,
       limit: imagePageSize,
+      allowSkipEmpty: imageFilter !== "all",
     });
   };
 
