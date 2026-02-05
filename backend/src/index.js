@@ -1095,7 +1095,7 @@ app.get("/api/accounts/:id/images", ensureAuthenticated, async (req, res, next) 
       return res.status(400).json({ error: "cloudinary-credentials-missing" });
     }
 
-    const limit = Math.min(Number(req.query.limit) || 50, 100);
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
     const authHeader = Buffer.from(`${account.apiKey}:${apiSecret}`).toString(
       "base64"
     );

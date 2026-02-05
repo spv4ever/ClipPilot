@@ -43,6 +43,7 @@ export default function App() {
   const [currentCursor, setCurrentCursor] = useState(null);
   const [lightboxImage, setLightboxImage] = useState(null);
   const [imageFilter, setImageFilter] = useState("all");
+  const [imagePageSize, setImagePageSize] = useState(50);
   const [imageCounts, setImageCounts] = useState({});
   const [imageCountsStatus, setImageCountsStatus] = useState("idle");
   const [reelImageStats, setReelImageStats] = useState(null);
@@ -112,7 +113,36 @@ export default function App() {
     }
   };
 
-  const loadImages = async ({ accountId, cursor } = {}) => {
+  const fetchImagesPage = async ({ accountId, cursor, limit }) => {
+    const url = new URL(`${backendUrl}/api/accounts/${accountId}/images`);
+    url.searchParams.set("limit", limit.toString());
+    if (cursor) {
+      url.searchParams.set("cursor", cursor);
+    }
+    const response = await fetch(url.toString(), {
+      credentials: "include",
+    });
+
+    if (handleUnauthorized(response)) {
+      return { unauthorized: true };
+    }
+
+    if (!response.ok) {
+      throw new Error("No se pudieron cargar las imágenes.");
+    }
+
+    const payload = await response.json();
+    return { images: payload.images || [], nextCursor: payload.nextCursor || null };
+  };
+
+  const loadImages = async ({
+    accountId,
+    cursor,
+    filter = imageFilter,
+    limit = imagePageSize,
+    allowSkipEmpty = false,
+    baseStack,
+  } = {}) => {
     if (!accountId) {
       setAccountImages([]);
       return;
@@ -121,28 +151,50 @@ export default function App() {
     try {
       setImagesStatus("loading");
       setImagesError("");
-      const url = new URL(`${backendUrl}/api/accounts/${accountId}/images`);
-      url.searchParams.set("limit", "50");
-      if (cursor) {
-        url.searchParams.set("cursor", cursor);
-      }
-      const response = await fetch(url.toString(), {
-        credentials: "include",
+      let currentCursorValue = cursor || null;
+      let stack = baseStack ?? cursorStack;
+      const shouldUpdateStack = baseStack !== undefined || allowSkipEmpty;
+      let { images, nextCursor, unauthorized } = await fetchImagesPage({
+        accountId,
+        cursor: currentCursorValue,
+        limit,
       });
 
-      if (handleUnauthorized(response)) {
+      if (unauthorized) {
         setAccountImages([]);
         return;
       }
 
-      if (!response.ok) {
-        throw new Error("No se pudieron cargar las imágenes.");
+      if (allowSkipEmpty && filter !== "all") {
+        let hasMatches = images.some((image) =>
+          filter === "reels" ? image.isReel : !image.isReel
+        );
+        while (!hasMatches && nextCursor) {
+          stack = [...stack, currentCursorValue];
+          currentCursorValue = nextCursor;
+          const result = await fetchImagesPage({
+            accountId,
+            cursor: currentCursorValue,
+            limit,
+          });
+          if (result.unauthorized) {
+            setAccountImages([]);
+            return;
+          }
+          images = result.images;
+          nextCursor = result.nextCursor;
+          hasMatches = images.some((image) =>
+            filter === "reels" ? image.isReel : !image.isReel
+          );
+        }
       }
 
-      const payload = await response.json();
-      setAccountImages(payload.images || []);
-      setNextCursor(payload.nextCursor || null);
-      setCurrentCursor(cursor || null);
+      setAccountImages(images);
+      setNextCursor(nextCursor || null);
+      setCurrentCursor(currentCursorValue);
+      if (shouldUpdateStack) {
+        setCursorStack(stack);
+      }
       setImagesStatus("success");
     } catch (err) {
       console.error(err);
@@ -465,16 +517,52 @@ export default function App() {
     setNextCursor(null);
     setAccountImages([]);
     setImageFilter("all");
+    setImagePageSize(50);
     setSelectedReelImages([]);
     setView("account-images");
-    loadImages({ accountId: account.id });
+    loadImages({ accountId: account.id, limit: 50, filter: "all", baseStack: [] });
     loadReelImageStats(account.id);
+  };
+
+  const handleImageFilterChange = (nextFilter) => {
+    setImageFilter(nextFilter);
+    if (!selectedAccount) return;
+    setCursorStack([]);
+    setCurrentCursor(null);
+    setNextCursor(null);
+    loadImages({
+      accountId: selectedAccount.id,
+      filter: nextFilter,
+      allowSkipEmpty: nextFilter !== "all",
+      baseStack: [],
+    });
+  };
+
+  const handlePageSizeChange = (event) => {
+    const nextSize = Number(event.target.value);
+    setImagePageSize(nextSize);
+    if (!selectedAccount) return;
+    setCursorStack([]);
+    setCurrentCursor(null);
+    setNextCursor(null);
+    loadImages({
+      accountId: selectedAccount.id,
+      limit: nextSize,
+      filter: imageFilter,
+      allowSkipEmpty: imageFilter !== "all",
+      baseStack: [],
+    });
   };
 
   const handleNextPage = () => {
     if (!nextCursor || !selectedAccount) return;
     setCursorStack((prev) => [...prev, currentCursor]);
-    loadImages({ accountId: selectedAccount.id, cursor: nextCursor });
+    loadImages({
+      accountId: selectedAccount.id,
+      cursor: nextCursor,
+      filter: imageFilter,
+      limit: imagePageSize,
+    });
   };
 
   const handlePreviousPage = () => {
@@ -482,12 +570,71 @@ export default function App() {
     const updatedStack = cursorStack.slice(0, -1);
     const cursor = updatedStack[updatedStack.length - 1];
     setCursorStack(updatedStack);
-    loadImages({ accountId: selectedAccount.id, cursor });
+    loadImages({
+      accountId: selectedAccount.id,
+      cursor,
+      filter: imageFilter,
+      limit: imagePageSize,
+      baseStack: updatedStack,
+    });
   };
 
   const handleRefreshImages = () => {
     if (!selectedAccount) return;
-    loadImages({ accountId: selectedAccount.id, cursor: currentCursor });
+    loadImages({
+      accountId: selectedAccount.id,
+      cursor: currentCursor,
+      filter: imageFilter,
+      limit: imagePageSize,
+    });
+  };
+
+  const handleFirstPage = () => {
+    if (!selectedAccount) return;
+    setCursorStack([]);
+    loadImages({
+      accountId: selectedAccount.id,
+      filter: imageFilter,
+      limit: imagePageSize,
+      allowSkipEmpty: imageFilter !== "all",
+      baseStack: [],
+    });
+  };
+
+  const handleLastPage = async () => {
+    if (!selectedAccount || !nextCursor) return;
+    try {
+      setImagesStatus("loading");
+      setImagesError("");
+      let stack = [...cursorStack];
+      let activeCursor = currentCursor;
+      let next = nextCursor;
+      let images = accountImages;
+      while (next) {
+        stack = [...stack, activeCursor];
+        const result = await fetchImagesPage({
+          accountId: selectedAccount.id,
+          cursor: next,
+          limit: imagePageSize,
+        });
+        if (result.unauthorized) {
+          setAccountImages([]);
+          return;
+        }
+        images = result.images;
+        activeCursor = next;
+        next = result.nextCursor || null;
+      }
+      setAccountImages(images);
+      setCursorStack(stack);
+      setCurrentCursor(activeCursor);
+      setNextCursor(next);
+      setImagesStatus("success");
+    } catch (err) {
+      console.error(err);
+      setImagesError("No se pudieron cargar las imágenes.");
+      setImagesStatus("error");
+    }
   };
 
   const handleGenerateReel = async () => {
@@ -1226,14 +1373,14 @@ export default function App() {
               <div>
                 <h2>Imágenes disponibles</h2>
                 <p className="subtitle">
-                  Página {currentPage}. Mostramos 50 imágenes por bloque.
+                  Página {currentPage}. Mostramos {imagePageSize} imágenes por bloque.
                 </p>
               </div>
               <div className="filter-tabs" role="tablist" aria-label="Filtrar imágenes">
                 <button
                   className={`secondary small${imageFilter === "all" ? " active" : ""}`}
                   type="button"
-                  onClick={() => setImageFilter("all")}
+                  onClick={() => handleImageFilterChange("all")}
                   role="tab"
                   aria-selected={imageFilter === "all"}
                 >
@@ -1242,7 +1389,7 @@ export default function App() {
                 <button
                   className={`secondary small${imageFilter === "reels" ? " active" : ""}`}
                   type="button"
-                  onClick={() => setImageFilter("reels")}
+                  onClick={() => handleImageFilterChange("reels")}
                   role="tab"
                   aria-selected={imageFilter === "reels"}
                 >
@@ -1251,14 +1398,31 @@ export default function App() {
                 <button
                   className={`secondary small${imageFilter === "no-reels" ? " active" : ""}`}
                   type="button"
-                  onClick={() => setImageFilter("no-reels")}
+                  onClick={() => handleImageFilterChange("no-reels")}
                   role="tab"
                   aria-selected={imageFilter === "no-reels"}
                 >
                   No Reels
                 </button>
               </div>
+              <label className="small select-inline">
+                <span>Tamaño de página</span>
+                <select value={imagePageSize} onChange={handlePageSizeChange}>
+                  {[20, 50, 100, 200].map((size) => (
+                    <option key={size} value={size}>
+                      {size}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <div className="pagination">
+                <button
+                  className="secondary"
+                  onClick={handleFirstPage}
+                  disabled={cursorStack.length === 0 || imagesStatus === "loading"}
+                >
+                  Inicio
+                </button>
                 <button
                   className="secondary"
                   onClick={handlePreviousPage}
@@ -1279,6 +1443,13 @@ export default function App() {
                   disabled={!nextCursor || imagesStatus === "loading"}
                 >
                   Siguiente
+                </button>
+                <button
+                  className="secondary"
+                  onClick={handleLastPage}
+                  disabled={!nextCursor || imagesStatus === "loading"}
+                >
+                  Fin
                 </button>
               </div>
             </header>
