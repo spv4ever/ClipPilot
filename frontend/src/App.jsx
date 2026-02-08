@@ -62,6 +62,16 @@ export default function App() {
   const [reels, setReels] = useState([]);
   const [reelsStatus, setReelsStatus] = useState("idle");
   const [reelsError, setReelsError] = useState("");
+  const [copyIdea, setCopyIdea] = useState("");
+  const [copyObjective, setCopyObjective] = useState("");
+  const [copyAudience, setCopyAudience] = useState("");
+  const [copyKeyPoints, setCopyKeyPoints] = useState("");
+  const [copyTone, setCopyTone] = useState("cercano");
+  const [copyCta, setCopyCta] = useState("");
+  const [copyHashtags, setCopyHashtags] = useState("");
+  const [copyOutput, setCopyOutput] = useState("");
+  const [copyError, setCopyError] = useState("");
+  const [copyCopied, setCopyCopied] = useState(false);
   const hasRestoredView = useRef(false);
 
   const displayName = useMemo(() => user?.displayName || "", [user]);
@@ -778,6 +788,72 @@ export default function App() {
     }
   };
 
+  const normalizeHashtags = (rawTags) =>
+    rawTags
+      .split(/,|\n/)
+      .map((tag) => tag.trim())
+      .filter(Boolean)
+      .map((tag) => (tag.startsWith("#") ? tag : `#${tag.replace(/^#/, "")}`));
+
+  const handleGenerateCopy = () => {
+    if (!copyIdea.trim()) {
+      setCopyError("Ingresa el tema o producto para generar el copy.");
+      return;
+    }
+
+    const headline =
+      copyTone === "enérgico"
+        ? `¡${copyIdea.trim()}!`
+        : copyTone === "formal"
+          ? `${copyIdea.trim()}.`
+          : copyIdea.trim();
+
+    const bulletLines = copyKeyPoints
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => `• ${line}`);
+
+    const hashtags = normalizeHashtags(copyHashtags);
+    const parts = [headline];
+
+    if (copyObjective.trim()) {
+      parts.push(copyObjective.trim());
+    }
+
+    if (bulletLines.length > 0) {
+      parts.push(bulletLines.join("\n"));
+    }
+
+    if (copyAudience.trim()) {
+      parts.push(`👥 ${copyAudience.trim()}`);
+    }
+
+    if (copyCta.trim()) {
+      parts.push(copyCta.trim());
+    }
+
+    if (hashtags.length > 0) {
+      parts.push(hashtags.join(" "));
+    }
+
+    setCopyOutput(parts.join("\n\n"));
+    setCopyError("");
+    setCopyCopied(false);
+  };
+
+  const handleCopyToClipboard = async () => {
+    if (!copyOutput) return;
+    try {
+      await navigator.clipboard.writeText(copyOutput);
+      setCopyCopied(true);
+      setTimeout(() => setCopyCopied(false), 2000);
+    } catch (err) {
+      console.error(err);
+      setCopyError("No se pudo copiar el texto. Selecciónalo manualmente.");
+    }
+  };
+
   const handleDraftChange = (field) => (event) => {
     setDraft((prev) => ({ ...prev, [field]: event.target.value }));
   };
@@ -1396,6 +1472,110 @@ export default function App() {
               </button>
             </div>
             {reelCreateError && <p className="error">{reelCreateError}</p>}
+          </section>
+
+          <section className="card copy-generator">
+            <header className="list-header">
+              <div>
+                <h2>Generar copy + hashtags</h2>
+                <p className="subtitle">
+                  Completa los campos y obtén un texto listo para copiar y pegar en
+                  redes sociales.
+                </p>
+              </div>
+            </header>
+            <div className="copy-generator-controls">
+              <label>
+                Tema, producto o campaña
+                <input
+                  type="text"
+                  value={copyIdea}
+                  onChange={(event) => setCopyIdea(event.target.value)}
+                  placeholder="Ej: Lanzamiento de la colección Primavera"
+                />
+              </label>
+              <label>
+                Objetivo o mensaje principal
+                <input
+                  type="text"
+                  value={copyObjective}
+                  onChange={(event) => setCopyObjective(event.target.value)}
+                  placeholder="Ej: Invitar a conocer los nuevos modelos"
+                />
+              </label>
+              <label>
+                Audiencia
+                <input
+                  type="text"
+                  value={copyAudience}
+                  onChange={(event) => setCopyAudience(event.target.value)}
+                  placeholder="Ej: amantes de la moda en LATAM"
+                />
+              </label>
+              <label>
+                Puntos clave (uno por línea)
+                <textarea
+                  rows="4"
+                  value={copyKeyPoints}
+                  onChange={(event) => setCopyKeyPoints(event.target.value)}
+                  placeholder="Ej: Colores vibrantes\nEnvío gratis\nStock limitado"
+                />
+              </label>
+              <label>
+                Tono
+                <select
+                  value={copyTone}
+                  onChange={(event) => setCopyTone(event.target.value)}
+                >
+                  <option value="cercano">Cercano</option>
+                  <option value="enérgico">Enérgico</option>
+                  <option value="formal">Formal</option>
+                </select>
+              </label>
+              <label>
+                Llamado a la acción (CTA)
+                <input
+                  type="text"
+                  value={copyCta}
+                  onChange={(event) => setCopyCta(event.target.value)}
+                  placeholder="Ej: Escribe por DM y reserva tu favorito."
+                />
+              </label>
+              <label>
+                Hashtags (separa con comas o saltos de línea)
+                <textarea
+                  rows="3"
+                  value={copyHashtags}
+                  onChange={(event) => setCopyHashtags(event.target.value)}
+                  placeholder="#Moda #Primavera #Novedades"
+                />
+              </label>
+              <div className="copy-actions">
+                <button className="primary" type="button" onClick={handleGenerateCopy}>
+                  Generar texto
+                </button>
+                <button
+                  className="secondary"
+                  type="button"
+                  onClick={handleCopyToClipboard}
+                  disabled={!copyOutput}
+                >
+                  {copyCopied ? "¡Copiado!" : "Copiar texto"}
+                </button>
+              </div>
+            </div>
+            {copyError && <p className="error">{copyError}</p>}
+            <div className="copy-output">
+              <label>
+                Texto generado
+                <textarea
+                  rows="8"
+                  readOnly
+                  value={copyOutput}
+                  placeholder="Aquí verás el texto listo para publicar."
+                />
+              </label>
+            </div>
           </section>
 
           <section className="card">
