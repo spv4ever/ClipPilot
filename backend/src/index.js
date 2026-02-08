@@ -445,6 +445,7 @@ const renderReelVideo = async ({
   fps = 30,
   width = 1080,
   height = 1920,
+  fadeOutToBlack = true,
   onProgress,
 }) => {
   const logProgress = typeof onProgress === "function" ? onProgress : () => {};
@@ -560,10 +561,14 @@ const renderReelVideo = async ({
       currentLabel = outputLabel;
     }
 
-    const fadeOutStart = Math.max(0, totalDuration - fadeDuration).toFixed(3);
-    filterParts.push(
-      `${currentLabel}fade=t=out:st=${fadeOutStart}:d=${fadeDuration},format=yuv420p[video]`
-    );
+    if (fadeOutToBlack) {
+      const fadeOutStart = Math.max(0, totalDuration - fadeDuration).toFixed(3);
+      filterParts.push(
+        `${currentLabel}fade=t=out:st=${fadeOutStart}:d=${fadeDuration},format=yuv420p[video]`
+      );
+    } else {
+      filterParts.push(`${currentLabel}format=yuv420p[video]`);
+    }
 
     let audioLabel = null;
     if (selectedAudio) {
@@ -1411,6 +1416,7 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
         : 0,
       secondsPerImage: req.body?.secondsPerImage,
       zoomAmount: req.body?.zoomAmount,
+      fadeOutToBlack: req.body?.fadeOutToBlack,
     });
     const accounts = await getAccountsCollection();
     const reels = await getReelsCollection();
@@ -1443,6 +1449,7 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
     const requestedCount = Number(req.body?.count) || 0;
     const requestedSecondsPerImage = req.body?.secondsPerImage;
     const requestedZoomAmount = req.body?.zoomAmount;
+    const requestedFadeOutToBlack = req.body?.fadeOutToBlack;
     if (!requestedImagePublicIds.length && requestedCount <= 0) {
       logStep("invalid-count", { requestedCount });
       return res.status(400).json({ error: "invalid-count", step: "input" });
@@ -1472,6 +1479,10 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
         : 2;
     const zoomAmount =
       requestedZoomAmount !== undefined ? Number(requestedZoomAmount) : 0.05;
+    const fadeOutToBlack =
+      requestedFadeOutToBlack === undefined
+        ? true
+        : Boolean(requestedFadeOutToBlack);
 
     const apiSecret = decryptSecret(account.apiSecret);
     if (!account.cloudName || !account.apiKey || !apiSecret) {
@@ -1541,21 +1552,23 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
       const finalResource =
         shuffleArray(availableFinalImages)[0] ?? shuffleArray(finalImages)[0];
 
+      const finalPayload = {
+        publicId: finalResource.public_id,
+        secureUrl: finalResource.secure_url,
+        url: finalResource.url,
+      };
       selected = [
+        finalPayload,
         ...selectedResources.map((resource) => ({
           publicId: resource.public_id,
           secureUrl: resource.secure_url,
           url: resource.url,
         })),
-        {
-          publicId: finalResource.public_id,
-          secureUrl: finalResource.secure_url,
-          url: finalResource.url,
-        },
+        finalPayload,
       ];
     } else {
       logStep("fetch-images", { requestedCount });
-      const nonFinalCount = Math.max(0, requestedCount - 1);
+      const nonFinalCount = Math.max(0, requestedCount - 2);
       const availableImages =
         nonFinalCount > 0
           ? await fetchCloudinaryImages({
@@ -1594,7 +1607,13 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
         });
       }
 
+      const finalPayload = {
+        publicId: finalResource.public_id,
+        secureUrl: finalResource.secure_url,
+        url: finalResource.url,
+      };
       selected = [
+        finalPayload,
         ...shuffleArray(filteredAvailableImages)
           .slice(0, nonFinalCount)
           .map((resource) => ({
@@ -1602,11 +1621,7 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
             secureUrl: resource.secure_url,
             url: resource.url,
           })),
-        {
-          publicId: finalResource.public_id,
-          secureUrl: finalResource.secure_url,
-          url: finalResource.url,
-        },
+        finalPayload,
       ];
     }
 
@@ -1629,6 +1644,7 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
         outputPath: tempOutputPath,
         durationSeconds: secondsPerImage,
         zoomAmount,
+        fadeOutToBlack,
         onProgress: (step, details) => logStep(step, details),
       });
       logStep("render-local-complete", { publicId });
@@ -1683,11 +1699,14 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
 
     logStep("persist-reel", { publicId: reelDoc.publicId });
     await reels.insertOne(reelDoc);
-    logStep("tag-images", { count: selected.length });
+    const uniqueSelectedPublicIds = [
+      ...new Set(selected.map((item) => item.publicId)),
+    ];
+    logStep("tag-images", { count: uniqueSelectedPublicIds.length });
     await updateCloudinaryTags({
       account,
       apiSecret,
-      publicIds: selected.map((item) => item.publicId),
+      publicIds: uniqueSelectedPublicIds,
       command: "add",
       tag: "reel",
     });

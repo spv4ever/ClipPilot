@@ -56,6 +56,7 @@ export default function App() {
   const [reelRandomCount, setReelRandomCount] = useState(6);
   const [reelSecondsPerImage, setReelSecondsPerImage] = useState(2);
   const [reelZoomAmount, setReelZoomAmount] = useState(0.05);
+  const [reelFadeOutToBlack, setReelFadeOutToBlack] = useState(true);
   const [reelCreateStatus, setReelCreateStatus] = useState("idle");
   const [reelCreateError, setReelCreateError] = useState("");
   const [reels, setReels] = useState([]);
@@ -697,6 +698,7 @@ export default function App() {
               : { imagePublicIds: manualImageIds }),
             secondsPerImage,
             zoomAmount,
+            fadeOutToBlack: reelFadeOutToBlack,
           }),
         }
       );
@@ -1251,7 +1253,7 @@ export default function App() {
                 <h2>Generar reel</h2>
                 <p className="subtitle">
                   Selecciona las imágenes que quieres usar y asegúrate de dejar
-                  el cierre con una imagen final (se añadirá automáticamente).
+                  el cierre con una imagen final (también la usaremos al inicio).
                 </p>
               </div>
               <button
@@ -1275,8 +1277,8 @@ export default function App() {
                   </p>
                   <p className="muted">
                     {reelSelectionMode === "manual"
-                      ? "Añadiremos automáticamente una imagen Final aleatoria para cerrar el reel."
-                      : "Seleccionaremos imágenes aleatorias y cerraremos con la imagen final."}
+                      ? "Añadiremos automáticamente una imagen Final aleatoria al inicio y para cerrar el reel."
+                      : "Seleccionaremos imágenes aleatorias y usaremos la imagen final al inicio y al cierre."}
                   </p>
                   <div className="reel-stats">
                     {reelImageStatsStatus === "loading" && (
@@ -1375,6 +1377,14 @@ export default function App() {
                   value={reelZoomAmount}
                   onChange={(event) => setReelZoomAmount(event.target.value)}
                 />
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={reelFadeOutToBlack}
+                  onChange={(event) => setReelFadeOutToBlack(event.target.checked)}
+                />
+                Final con fade out a negro
               </label>
               <button
                 className="primary"
