@@ -545,7 +545,8 @@ const renderReelVideo = async ({
       const baseTransform =
         `${inputLabel}scale=${width}:${height}:force_original_aspect_ratio=decrease,` +
         `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,${zoompan}`;
-      const fadeIn = index === 0 ? `,fade=t=in:st=0:d=${fadeDuration}` : "";
+      const fadeIn =
+        index === 0 && fadeOutToBlack ? `,fade=t=in:st=0:d=${fadeDuration}` : "";
       filterParts.push(`${baseTransform}${fadeIn}${outputLabel}`);
       streamLabels.push(outputLabel);
     });
