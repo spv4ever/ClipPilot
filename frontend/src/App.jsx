@@ -57,6 +57,9 @@ export default function App() {
   const [reelSecondsPerImage, setReelSecondsPerImage] = useState(2);
   const [reelZoomAmount, setReelZoomAmount] = useState(0.05);
   const [reelFadeOutToBlack, setReelFadeOutToBlack] = useState(true);
+  const [reelCopyEnabled, setReelCopyEnabled] = useState(false);
+  const [reelCopyStatus, setReelCopyStatus] = useState("idle");
+  const [reelCopyError, setReelCopyError] = useState("");
   const [reelCreateStatus, setReelCreateStatus] = useState("idle");
   const [reelCreateError, setReelCreateError] = useState("");
   const [reels, setReels] = useState([]);
@@ -693,6 +696,8 @@ export default function App() {
     try {
       setReelCreateStatus("loading");
       setReelCreateError("");
+      setReelCopyError("");
+      setReelCopyStatus(reelCopyEnabled ? "loading" : "idle");
       const manualImageIds = selectedReelImages.map((image) => image.publicId);
       const response = await fetch(
         `${backendUrl}/api/accounts/${selectedAccount.id}/reels`,
@@ -709,6 +714,7 @@ export default function App() {
             secondsPerImage,
             zoomAmount,
             fadeOutToBlack: reelFadeOutToBlack,
+            generateCopy: reelCopyEnabled,
           }),
         }
       );
@@ -777,12 +783,38 @@ export default function App() {
         )
       );
       setReels((prev) => [payload.reel, ...prev]);
+      if (payload.copy?.text) {
+        setCopyOutput(payload.copy.text);
+        setCopyError("");
+        setCopyCopied(false);
+      }
+      if (payload.copyError) {
+        const messageByError = {
+          "copy-image-unavailable":
+            "No se pudo usar la segunda imagen para generar el copy.",
+          "openai-api-key-missing":
+            "Falta configurar la API Key de OpenAI para generar el copy.",
+          "copy-generation-failed": "No se pudo generar el copy con IA.",
+        };
+        setReelCopyError(
+          messageByError[payload.copyError] || "No se pudo generar el copy."
+        );
+        setReelCopyStatus("error");
+      } else if (reelCopyEnabled) {
+        setReelCopyStatus(payload.copy?.text ? "success" : "idle");
+      } else {
+        setReelCopyStatus("idle");
+      }
       setSelectedReelImages([]);
       setReelCreateStatus("success");
     } catch (err) {
       console.error(err);
       setReelCreateError(err.message || "No se pudo generar el reel.");
       setReelCreateStatus("error");
+      if (reelCopyEnabled) {
+        setReelCopyStatus("error");
+        setReelCopyError("No se pudo generar el copy con IA.");
+      }
     } finally {
       setReelCreateStatus("idle");
     }
@@ -1462,6 +1494,15 @@ export default function App() {
                 />
                 Final con fade out a negro
               </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={reelCopyEnabled}
+                  onChange={(event) => setReelCopyEnabled(event.target.checked)}
+                />
+                Generar copy con IA al crear el reel (usa la 2da imagen para el
+                estilo)
+              </label>
               <button
                 className="primary"
                 type="button"
@@ -1472,6 +1513,13 @@ export default function App() {
               </button>
             </div>
             {reelCreateError && <p className="error">{reelCreateError}</p>}
+            {reelCopyStatus === "loading" && (
+              <p className="muted">Generando copy con IA...</p>
+            )}
+            {reelCopyStatus === "success" && (
+              <p className="muted">Copy con IA listo en el generador.</p>
+            )}
+            {reelCopyError && <p className="error">{reelCopyError}</p>}
           </section>
 
           <section className="card copy-generator">
