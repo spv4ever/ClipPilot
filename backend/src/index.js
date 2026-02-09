@@ -56,6 +56,8 @@ const resolveMongoDbName = () => {
 };
 const mongoDbName = resolveMongoDbName();
 const allowedEmailDomain = "gmail.com";
+const openAiApiKey = process.env.OPENAI_API_KEY;
+const openAiModel = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const accountSecretSource =
   process.env.ACCOUNT_SECRET_KEY || process.env.SESSION_SECRET || "dev-secret";
 const accountSecretKey = crypto
@@ -196,6 +198,70 @@ const decryptSecret = (value) => {
   } catch (error) {
     return "";
   }
+};
+
+const buildCopyText = ({ headline, body, cta, hashtags }) => {
+  const parts = [headline, body, cta]
+    .map((part) => (typeof part === "string" ? part.trim() : ""))
+    .filter(Boolean);
+  const tags = Array.isArray(hashtags) ? hashtags.filter(Boolean) : [];
+  if (tags.length > 0) {
+    parts.push(tags.join(" "));
+  }
+  return parts.join("\n\n");
+};
+
+const requestOpenAiCopy = async ({ imageUrl }) => {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${openAiApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: openAiModel,
+      temperature: 0.7,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            "Eres un copywriter creativo para redes sociales. Responde en español.",
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text:
+                "Genera un copy breve para Instagram inspirado solo en el estilo visual " +
+                "de la imagen (paleta, energía, sensación). No describas objetos " +
+                "específicos. Devuelve JSON con headline, body, cta y hashtags (array).",
+            },
+            { type: "image_url", image_url: { url: imageUrl } },
+          ],
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`openai-error:${response.status}:${errorBody}`);
+  }
+
+  const payload = await response.json();
+  const content = payload?.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error("openai-empty-response");
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(content);
+  } catch (error) {
+    throw new Error("openai-invalid-json");
+  }
+  return buildCopyText(parsed);
 };
 
 const fetchCloudinaryImages = async ({
@@ -1418,6 +1484,7 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
       secondsPerImage: req.body?.secondsPerImage,
       zoomAmount: req.body?.zoomAmount,
       fadeOutToBlack: req.body?.fadeOutToBlack,
+      generateCopy: req.body?.generateCopy,
     });
     const accounts = await getAccountsCollection();
     const reels = await getReelsCollection();
@@ -1451,6 +1518,7 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
     const requestedSecondsPerImage = req.body?.secondsPerImage;
     const requestedZoomAmount = req.body?.zoomAmount;
     const requestedFadeOutToBlack = req.body?.fadeOutToBlack;
+    const requestedGenerateCopy = Boolean(req.body?.generateCopy);
     if (!requestedImagePublicIds.length && requestedCount <= 0) {
       logStep("invalid-count", { requestedCount });
       return res.status(400).json({ error: "invalid-count", step: "input" });
@@ -1492,6 +1560,9 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
         .status(400)
         .json({ error: "cloudinary-credentials-missing", step: "credentials" });
     }
+
+    let generatedCopy = null;
+    let generatedCopyError = null;
 
     let selected = [];
 
@@ -1626,6 +1697,25 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
       ];
     }
 
+    if (requestedGenerateCopy) {
+      const styleImage = selected[1];
+      const styleImageUrl = styleImage?.secureUrl || styleImage?.url;
+      if (!styleImageUrl) {
+        generatedCopyError = "copy-image-unavailable";
+      } else if (!openAiApiKey) {
+        generatedCopyError = "openai-api-key-missing";
+      } else {
+        try {
+          generatedCopy = {
+            text: await requestOpenAiCopy({ imageUrl: styleImageUrl }),
+          };
+        } catch (error) {
+          console.error("[reel] copy generation failed", error);
+          generatedCopyError = "copy-generation-failed";
+        }
+      }
+    }
+
     logStep("render-local-start", { selectedCount: selected.length });
     const timestamp = Math.floor(Date.now() / 1000);
     const publicId = `reel_${Date.now()}`;
@@ -1716,6 +1806,8 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
     return res.status(201).json({
       reel: reelDoc,
       images: selected,
+      copy: generatedCopy,
+      copyError: generatedCopyError,
     });
   } catch (error) {
     return next(error);
