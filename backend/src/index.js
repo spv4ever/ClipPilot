@@ -1786,6 +1786,8 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
       createdAt: now,
       imagePublicIds: selected.map((item) => item.publicId),
       imageCount: selected.length,
+      copy: generatedCopy?.text || null,
+      copyError: generatedCopyError || null,
     };
 
     logStep("persist-reel", { publicId: reelDoc.publicId });
@@ -1836,6 +1838,8 @@ app.get("/api/reels", ensureAuthenticated, async (req, res, next) => {
         secureUrl: reel.secureUrl,
         createdAt: reel.createdAt,
         imageCount: reel.imageCount,
+        copy: reel.copy || null,
+        copyError: reel.copyError || null,
       })),
     });
   } catch (error) {

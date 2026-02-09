@@ -1858,6 +1858,11 @@ export default function App() {
                       <p className="muted">
                         Imágenes: {reel.imageCount ?? "N/A"}
                       </p>
+                      {reel.copy && (
+                        <p className="reel-copy">
+                          <span className="label">Copy IA:</span> {reel.copy}
+                        </p>
+                      )}
                     </div>
                   </article>
                 ))}
