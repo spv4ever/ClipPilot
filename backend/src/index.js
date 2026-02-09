@@ -234,9 +234,11 @@ const requestOpenAiCopy = async ({ imageUrl }) => {
             {
               type: "text",
               text:
-                "Genera un copy breve para Instagram inspirado solo en el estilo visual " +
-                "de la imagen (paleta, energía, sensación). No describas objetos " +
-                "específicos. Devuelve JSON con headline, body, cta y hashtags (array).",
+                "Genera un copy breve optimizado para Instagram Reels, YouTube Shorts, " +
+                "X y TikTok, inspirado solo en el estilo visual de la imagen (paleta, " +
+                "energía, sensación). Ten en cuenta que son imágenes generadas con AI " +
+                "y no describas objetos específicos. Devuelve JSON con headline, body, " +
+                "cta y hashtags (array).",
             },
             { type: "image_url", image_url: { url: imageUrl } },
           ],
