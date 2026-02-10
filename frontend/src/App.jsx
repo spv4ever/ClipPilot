@@ -63,6 +63,7 @@ export default function App() {
   const [reelCreateStatus, setReelCreateStatus] = useState("idle");
   const [reelCreateError, setReelCreateError] = useState("");
   const [reels, setReels] = useState([]);
+  const [reelPreviewEnabled, setReelPreviewEnabled] = useState({});
   const [reelsStatus, setReelsStatus] = useState("idle");
   const [reelsError, setReelsError] = useState("");
   const [copyIdea, setCopyIdea] = useState("");
@@ -85,6 +86,27 @@ export default function App() {
   );
   const formatCount = (value) =>
     Number.isFinite(value) ? value.toLocaleString("es-ES") : "N/D";
+
+  const getReelKey = (reel) => reel.id || reel.publicId;
+
+  const isReelPreviewVisible = (reel) => {
+    const reelKey = getReelKey(reel);
+    if (!reelKey) {
+      return true;
+    }
+    return reelPreviewEnabled[reelKey] ?? true;
+  };
+
+  const handleToggleReelPreview = (reel) => {
+    const reelKey = getReelKey(reel);
+    if (!reelKey) {
+      return;
+    }
+    setReelPreviewEnabled((previous) => ({
+      ...previous,
+      [reelKey]: !(previous[reelKey] ?? true),
+    }));
+  };
 
   const isAuthenticated = status === "authenticated" && user;
 
@@ -1845,12 +1867,16 @@ export default function App() {
             {reels.length > 0 ? (
               <div className="reel-grid">
                 {reels.map((reel) => (
-                  <article className="reel-card" key={reel.id || reel.publicId}>
-                    <video
-                      src={reel.secureUrl || reel.url}
-                      controls
-                      preload="metadata"
-                    />
+                  <article className="reel-card" key={getReelKey(reel)}>
+                    {isReelPreviewVisible(reel) ? (
+                      <video
+                        src={reel.secureUrl || reel.url}
+                        controls
+                        preload="metadata"
+                      />
+                    ) : (
+                      <div className="reel-preview-hidden">Vista previa desactivada</div>
+                    )}
                     <div className="reel-meta">
                       <p className="subtitle">
                         Cuenta: {reel.accountName || reel.accountId}
@@ -1858,6 +1884,17 @@ export default function App() {
                       <p className="muted">
                         Imágenes: {reel.imageCount ?? "N/A"}
                       </p>
+                      <button
+                        className={`secondary small${
+                          isReelPreviewVisible(reel) ? " active" : ""
+                        }`}
+                        type="button"
+                        onClick={() => handleToggleReelPreview(reel)}
+                      >
+                        {isReelPreviewVisible(reel)
+                          ? "Desactivar vista previa"
+                          : "Activar vista previa"}
+                      </button>
                       {reel.copy && (
                         <p className="reel-copy">
                           <span className="label">Copy IA:</span> {reel.copy}
