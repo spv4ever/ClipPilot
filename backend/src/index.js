@@ -727,6 +727,272 @@ const shuffleArray = (values) => {
   return array;
 };
 
+const comfyUiBaseUrl = process.env.COMFYUI_BASE_URL || "http://localhost:8188";
+const comfyUiOutputDir =
+  process.env.COMFYUI_OUTPUT_DIR ||
+  "C:\\StabilyMatrix\\Data\\Packages\\ComfyUI-dev\\output";
+
+const comfyWorkflowTemplate = {
+  84: {
+    inputs: {
+      clip_name: "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      type: "wan",
+      device: "default",
+    },
+    class_type: "CLIPLoader",
+  },
+  89: {
+    inputs: {
+      text: "",
+      clip: ["116", 1],
+    },
+    class_type: "CLIPTextEncode",
+  },
+  90: {
+    inputs: {
+      vae_name: "wan_2.1_vae_new.safetensors",
+    },
+    class_type: "VAELoader",
+  },
+  93: {
+    inputs: {
+      text: "",
+      clip: ["115", 1],
+    },
+    class_type: "CLIPTextEncode",
+  },
+  95: {
+    inputs: {
+      unet_name: "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
+      weight_dtype: "default",
+    },
+    class_type: "UNETLoader",
+  },
+  96: {
+    inputs: {
+      unet_name: "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
+      weight_dtype: "default",
+    },
+    class_type: "UNETLoader",
+  },
+  98: {
+    inputs: {
+      width: 480,
+      height: 720,
+      length: 81,
+      batch_size: 1,
+      positive: ["93", 0],
+      negative: ["89", 0],
+      vae: ["90", 0],
+      start_image: ["117", 0],
+    },
+    class_type: "WanImageToVideo",
+  },
+  101: {
+    inputs: {
+      lora_name: "lightx2v_T2V_14B_cfg_step_distill_v2_lora_rank64_bf16.safetensors",
+      strength_model: 2,
+      model: ["95", 0],
+    },
+    class_type: "LoraLoaderModelOnly",
+  },
+  102: {
+    inputs: {
+      lora_name: "lightx2v_T2V_14B_cfg_step_distill_v2_lora_rank64_bf16.safetensors",
+      strength_model: 1,
+      model: ["96", 0],
+    },
+    class_type: "LoraLoaderModelOnly",
+  },
+  103: {
+    inputs: {
+      shift: 5,
+      model: ["116", 0],
+    },
+    class_type: "ModelSamplingSD3",
+  },
+  104: {
+    inputs: {
+      shift: 5,
+      model: ["115", 0],
+    },
+    class_type: "ModelSamplingSD3",
+  },
+  108: {
+    inputs: {
+      filename_prefix: "video/ComfyUI",
+      format: "auto",
+      codec: "auto",
+      "video-preview": "",
+      video: ["113", 0],
+    },
+    class_type: "SaveVideo",
+  },
+  112: {
+    inputs: {
+      ckpt_name: "film_net_fp32.pt",
+      clear_cache_after_n_frames: 10,
+      multiplier: 2,
+      frames: ["87", 0],
+    },
+    class_type: "FILM VFI",
+  },
+  113: {
+    inputs: {
+      fps: 32,
+      images: ["112", 0],
+    },
+    class_type: "CreateVideo",
+  },
+  114: {
+    inputs: {
+      boundary: 0.9,
+      add_noise: "enable",
+      noise_seed: 114575917492171,
+      steps: 6,
+      cfg_high_noise: 1,
+      cfg_low_noise: 1,
+      sampler_name: "euler",
+      scheduler: "simple",
+      sigma_shift: 8,
+      start_at_step: 0,
+      end_at_step: 10000,
+      return_with_leftover_noise: "disable",
+      model_high_noise: ["104", 0],
+      model_low_noise: ["103", 0],
+      positive: ["98", 0],
+      negative: ["98", 1],
+      latent_image: ["98", 2],
+    },
+    class_type: "WanMoeKSamplerAdvanced",
+  },
+  115: {
+    inputs: {
+      PowerLoraLoaderHeaderWidget: {
+        type: "PowerLoraLoaderHeaderWidget",
+      },
+      lora_1: {
+        on: false,
+        lora: "lightx2v-seko-v1-1\\high_noise_model.safetensors",
+        strength: 1,
+      },
+      lora_2: {
+        on: false,
+        lora: "wan\\i2v-Missionary-Sex-H.safetensors",
+        strength: 1,
+      },
+      "➕ Add Lora": "",
+      model: ["101", 0],
+      clip: ["84", 0],
+    },
+    class_type: "Power Lora Loader (rgthree)",
+  },
+  116: {
+    inputs: {
+      PowerLoraLoaderHeaderWidget: {
+        type: "PowerLoraLoaderHeaderWidget",
+      },
+      lora_1: {
+        on: false,
+        lora: "lightx2v-seko-v1-1\\low_noise_model.safetensors",
+        strength: 1,
+      },
+      lora_2: {
+        on: false,
+        lora: "wan\\w22_i2v_Multiple-Angles-Missionary_L.safetensors",
+        strength: 1,
+      },
+      "➕ Add Lora": "",
+      model: ["102", 0],
+      clip: ["84", 0],
+    },
+    class_type: "Power Lora Loader (rgthree)",
+  },
+  117: {
+    inputs: {
+      image: "",
+      keep_alpha_channel: false,
+      output_mode: false,
+    },
+    class_type: "LoadImageFromUrl",
+  },
+  87: {
+    inputs: {
+      samples: ["114", 0],
+      vae: ["90", 0],
+    },
+    class_type: "VAEDecode",
+  },
+};
+
+const buildComfyWorkflow = ({ imageUrl, positivePrompt, negativePrompt, length, fps }) => {
+  const workflow = JSON.parse(JSON.stringify(comfyWorkflowTemplate));
+  workflow[117].inputs.image = imageUrl;
+  workflow[93].inputs.text = positivePrompt;
+  workflow[89].inputs.text = negativePrompt;
+  workflow[98].inputs.length = length;
+  workflow[113].inputs.fps = fps;
+  return workflow;
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const runComfyWorkflow = async ({ imageUrl, positivePrompt, negativePrompt, length, fps }) => {
+  const promptResponse = await fetch(`${comfyUiBaseUrl}/prompt`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt: buildComfyWorkflow({ imageUrl, positivePrompt, negativePrompt, length, fps }),
+      client_id: `clippilot-${Date.now()}`,
+    }),
+  });
+
+  if (!promptResponse.ok) {
+    const errorBody = await promptResponse.text();
+    throw new Error(`comfyui-prompt-failed:${promptResponse.status}:${errorBody}`);
+  }
+
+  const promptPayload = await promptResponse.json();
+  const promptId = promptPayload?.prompt_id;
+  if (!promptId) {
+    throw new Error("comfyui-prompt-id-missing");
+  }
+
+  for (let attempt = 0; attempt < 360; attempt += 1) {
+    const historyResponse = await fetch(`${comfyUiBaseUrl}/history/${promptId}`);
+    if (!historyResponse.ok) {
+      await sleep(1000);
+      continue;
+    }
+
+    const historyPayload = await historyResponse.json();
+    const entry = historyPayload?.[promptId];
+    if (!entry) {
+      await sleep(1000);
+      continue;
+    }
+
+    if (entry?.status?.status_str === "error") {
+      throw new Error("comfyui-generation-failed");
+    }
+
+    const saveVideoNodeOutput = entry?.outputs?.["108"];
+    const videoInfo =
+      saveVideoNodeOutput?.gifs?.[0] ||
+      saveVideoNodeOutput?.videos?.[0] ||
+      saveVideoNodeOutput?.images?.[0] ||
+      null;
+
+    if (videoInfo?.filename) {
+      return { promptId, videoInfo };
+    }
+
+    await sleep(1000);
+  }
+
+  throw new Error("comfyui-timeout");
+};
+
 passport.use(
   new GoogleStrategy(
     {
@@ -1817,6 +2083,152 @@ app.post("/api/accounts/:id/reels", ensureAuthenticated, async (req, res, next) 
     return next(error);
   }
 });
+
+
+app.post(
+  "/api/accounts/:id/videos/from-image",
+  ensureAuthenticated,
+  async (req, res, next) => {
+    try {
+      const accounts = await getAccountsCollection();
+      if (!accounts) {
+        return res.status(503).json({ error: "storage-unavailable" });
+      }
+
+      const { id } = req.params;
+      const {
+        imageUrl,
+        imagePublicId,
+        positivePrompt,
+        negativePrompt,
+        frameLength,
+        fps,
+      } = req.body || {};
+
+      if (!imageUrl || typeof imageUrl !== "string") {
+        return res.status(400).json({ error: "invalid-image-url" });
+      }
+
+      const parsedFrameLength = Number(frameLength);
+      const parsedFps = Number(fps);
+      if (!Number.isFinite(parsedFrameLength) || parsedFrameLength < 8 || parsedFrameLength > 240) {
+        return res.status(400).json({ error: "invalid-frame-length" });
+      }
+      if (!Number.isFinite(parsedFps) || parsedFps < 8 || parsedFps > 60) {
+        return res.status(400).json({ error: "invalid-fps" });
+      }
+
+      let accountId;
+      try {
+        accountId = new ObjectId(id);
+      } catch (error) {
+        return res.status(400).json({ error: "invalid-account" });
+      }
+
+      const account = await accounts.findOne({ _id: accountId, userId: req.user.id });
+      if (!account) {
+        return res.status(404).json({ error: "account-not-found" });
+      }
+
+      const selectedPositivePrompt =
+        typeof positivePrompt === "string" && positivePrompt.trim()
+          ? positivePrompt.trim()
+          : "animate image";
+      const selectedNegativePrompt =
+        typeof negativePrompt === "string" && negativePrompt.trim()
+          ? negativePrompt.trim()
+          : "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走";
+
+      const comfyResult = await runComfyWorkflow({
+        imageUrl,
+        positivePrompt: selectedPositivePrompt,
+        negativePrompt: selectedNegativePrompt,
+        length: Math.floor(parsedFrameLength),
+        fps: Math.floor(parsedFps),
+      });
+
+      const comfyFilename = comfyResult.videoInfo.filename;
+      const comfySubfolder = comfyResult.videoInfo.subfolder || "";
+      const comfyType = comfyResult.videoInfo.type || "output";
+
+      let comfyPath;
+      if (path.isAbsolute(comfyFilename)) {
+        comfyPath = comfyFilename;
+      } else {
+        comfyPath = path.join(comfyUiOutputDir, comfySubfolder, comfyFilename);
+      }
+
+      const fileBuffer = await fs.readFile(comfyPath);
+      const timestamp = Math.floor(Date.now() / 1000);
+      const publicId = [
+        "videos",
+        "generated",
+        `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      ].join("/");
+
+      const apiSecret = decryptSecret(account.apiSecret);
+      if (!account.cloudName || !account.apiKey || !apiSecret) {
+        return res.status(400).json({ error: "cloudinary-credentials-missing" });
+      }
+
+      const signature = buildCloudinarySignature(
+        {
+          folder: "videos",
+          public_id: publicId,
+          timestamp,
+        },
+        apiSecret
+      );
+
+      const formData = new FormData();
+      formData.append("file", new Blob([fileBuffer]), `${path.basename(publicId)}.mp4`);
+      formData.append("api_key", account.apiKey);
+      formData.append("timestamp", String(timestamp));
+      formData.append("public_id", publicId);
+      formData.append("folder", "videos");
+      formData.append("signature", signature);
+
+      const uploadUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/video/upload`;
+      const uploadResponse = await fetch(uploadUrl, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!uploadResponse.ok) {
+        const errorBody = await uploadResponse.text();
+        return res.status(uploadResponse.status).json({
+          error: "cloudinary-upload-failed",
+          details: errorBody,
+        });
+      }
+
+      const uploadResult = await uploadResponse.json();
+
+      return res.json({
+        video: {
+          publicId: uploadResult.public_id,
+          url: uploadResult.url,
+          secureUrl: uploadResult.secure_url,
+          sourceImagePublicId: imagePublicId || null,
+          promptId: comfyResult.promptId,
+          comfyFile: {
+            filename: comfyFilename,
+            subfolder: comfySubfolder,
+            type: comfyType,
+          },
+        },
+      });
+    } catch (error) {
+      if (typeof error?.message === "string" && error.message.startsWith("comfyui-")) {
+        return res.status(502).json({ error: error.message });
+      }
+      if (error?.code === "ENOENT") {
+        return res.status(502).json({ error: "comfyui-output-file-not-found" });
+      }
+      return next(error);
+    }
+  }
+);
 
 app.get("/api/reels", ensureAuthenticated, async (req, res, next) => {
   try {
