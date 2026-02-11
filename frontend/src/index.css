@@ -886,6 +886,11 @@ label.select-inline span {
   gap: 0.9rem;
 }
 
+.video-workflow-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
 @media (max-width: 980px) {
   .video-workflow-grid {
     grid-template-columns: 1fr;

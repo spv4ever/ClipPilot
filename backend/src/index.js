@@ -282,6 +282,69 @@ const requestOpenAiCopy = async ({ imageUrl }) => {
   return buildCopyText(parsed);
 };
 
+const requestOpenAiWanI2vPrompt = async ({ imageUrl, currentPrompt = "" }) => {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${openAiApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: openAiModel,
+      temperature: 0.6,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are an expert prompt engineer for Wan 2.2 image-to-video (i2v). " +
+            "Always respond in English and return only valid JSON.",
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text:
+                "Analyze the image and create the best positive prompt to animate it in Wan 2.2 i2v. " +
+                "Focus on camera movement, subject motion, atmosphere, and cinematic detail while preserving identity and composition. " +
+                "Avoid mentioning text overlays, watermarks, or quality disclaimers. " +
+                `Current prompt (optional reference): ${currentPrompt || "none"}. ` +
+                'Return JSON with this schema only: {"prompt":"..."}.',
+            },
+            { type: "image_url", image_url: { url: imageUrl } },
+          ],
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`openai-error:${response.status}:${errorBody}`);
+  }
+
+  const payload = await response.json();
+  const content = payload?.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error("openai-empty-response");
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(content);
+  } catch (error) {
+    throw new Error("openai-invalid-json");
+  }
+
+  const prompt = typeof parsed?.prompt === "string" ? parsed.prompt.trim() : "";
+  if (!prompt) {
+    throw new Error("openai-empty-response");
+  }
+
+  return prompt;
+};
+
 const fetchCloudinaryImages = async ({
   account,
   apiSecret,
@@ -2388,6 +2451,61 @@ app.post(
       return next(error);
     } finally {
       activeVideoGenerationJobs.delete(requestKey);
+    }
+  }
+);
+
+
+app.post(
+  "/api/accounts/:id/videos/suggest-prompt",
+  ensureAuthenticated,
+  async (req, res, next) => {
+    const { id } = req.params;
+    const { imageUrl, currentPrompt } = req.body || {};
+
+    if (!imageUrl || typeof imageUrl !== "string") {
+      return res.status(400).json({ error: "invalid-image-url" });
+    }
+
+    let accountId;
+    try {
+      accountId = new ObjectId(id);
+    } catch (error) {
+      return res.status(400).json({ error: "invalid-account" });
+    }
+
+    try {
+      const accounts = await getAccountsCollection();
+      if (!accounts) {
+        return res.status(503).json({ error: "storage-unavailable" });
+      }
+
+      const account = await accounts.findOne({ _id: accountId, userId: req.user.id });
+      if (!account) {
+        return res.status(404).json({ error: "account-not-found" });
+      }
+
+      if (!openAiApiKey) {
+        return res.status(400).json({ error: "openai-api-key-missing" });
+      }
+
+      const prompt = await requestOpenAiWanI2vPrompt({
+        imageUrl,
+        currentPrompt: typeof currentPrompt === "string" ? currentPrompt.trim() : "",
+      });
+
+      return res.json({ prompt });
+    } catch (error) {
+      if (typeof error?.message === "string" && error.message.startsWith("openai-error:")) {
+        return res.status(502).json({ error: "openai-request-failed" });
+      }
+      if (error?.message === "openai-empty-response") {
+        return res.status(502).json({ error: "openai-empty-response" });
+      }
+      if (error?.message === "openai-invalid-json") {
+        return res.status(502).json({ error: "openai-invalid-json" });
+      }
+      return next(error);
     }
   }
 );
