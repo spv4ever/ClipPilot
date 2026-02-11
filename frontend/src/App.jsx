@@ -89,6 +89,8 @@ export default function App() {
   const [videoAspectRatio, setVideoAspectRatio] = useState("9:16");
   const [videoGenerationStatus, setVideoGenerationStatus] = useState("idle");
   const [videoGenerationError, setVideoGenerationError] = useState("");
+  const [videoPromptSuggestStatus, setVideoPromptSuggestStatus] = useState("idle");
+  const [videoPromptSuggestError, setVideoPromptSuggestError] = useState("");
   const [generatedVideo, setGeneratedVideo] = useState(null);
   const hasRestoredView = useRef(false);
   const videoGenerationInFlightRef = useRef(false);
@@ -1166,8 +1168,74 @@ export default function App() {
     setVideoSourceImage(image);
     setGeneratedVideo(null);
     setVideoGenerationError("");
+    setVideoPromptSuggestError("");
     setView("video-workflow");
     loadVideos();
+  };
+
+  const handleSuggestVideoPrompt = async () => {
+    if (!selectedAccount || !videoSourceImage) {
+      setVideoPromptSuggestError("Selecciona una imagen para pedir el prompt.");
+      return;
+    }
+
+    try {
+      setVideoPromptSuggestStatus("loading");
+      setVideoPromptSuggestError("");
+      const response = await fetch(
+        `${backendUrl}/api/accounts/${selectedAccount.id}/videos/suggest-prompt`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            imageUrl: videoSourceImage.secureUrl || videoSourceImage.url,
+            currentPrompt: videoPositivePrompt,
+          }),
+        }
+      );
+
+      if (handleUnauthorized(response)) {
+        return;
+      }
+
+      let payload;
+      try {
+        payload = await response.json();
+      } catch (error) {
+        payload = null;
+      }
+
+      if (!response.ok) {
+        const messageByError = {
+          "invalid-image-url": "La imagen seleccionada no tiene una URL válida.",
+          "invalid-account": "La cuenta seleccionada no es válida.",
+          "account-not-found": "No se encontró la cuenta seleccionada.",
+          "openai-api-key-missing": "Falta configurar la API key de OpenAI en el backend.",
+          "openai-request-failed": "OpenAI no respondió correctamente. Inténtalo de nuevo.",
+          "openai-empty-response": "OpenAI no devolvió un prompt utilizable.",
+          "openai-invalid-json": "OpenAI devolvió un formato inesperado.",
+        };
+        throw new Error(
+          messageByError[payload?.error] || "No se pudo sugerir el prompt con IA."
+        );
+      }
+
+      if (!payload?.prompt) {
+        throw new Error("OpenAI no devolvió un prompt.");
+      }
+
+      setVideoPositivePrompt(payload.prompt);
+    } catch (error) {
+      console.error(error);
+      setVideoPromptSuggestError(
+        error.message || "No se pudo sugerir el prompt con IA."
+      );
+    } finally {
+      setVideoPromptSuggestStatus("idle");
+    }
   };
 
   const handleGenerateVideo = async () => {
@@ -2023,6 +2091,18 @@ export default function App() {
                       onChange={(event) => setVideoPositivePrompt(event.target.value)}
                     />
                   </label>
+                  <div className="video-workflow-actions">
+                    <button
+                      className="secondary"
+                      type="button"
+                      onClick={handleSuggestVideoPrompt}
+                      disabled={videoPromptSuggestStatus === "loading"}
+                    >
+                      {videoPromptSuggestStatus === "loading"
+                        ? "Analizando imagen con OpenAI..."
+                        : "✨ Sugerir prompt IA (Wan 2.2 i2v)"}
+                    </button>
+                  </div>
                   <label>
                     Prompt negativo
                     <textarea
@@ -2076,6 +2156,7 @@ export default function App() {
                       ? "Generando video..."
                       : "Generar video con workflow"}
                   </button>
+                  {videoPromptSuggestError && <p className="error">{videoPromptSuggestError}</p>}
                   {videoGenerationError && <p className="error">{videoGenerationError}</p>}
                 </div>
               </div>
