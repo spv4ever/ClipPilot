@@ -646,6 +646,11 @@ label.select-inline span {
   gap: 0.25rem;
 }
 
+.video-public-id {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 
 .video-grid {
   grid-template-columns: repeat(auto-fit, minmax(180px, 240px));

@@ -2096,7 +2096,7 @@ export default function App() {
                 <article className="reel-card video-card">
                   <video src={generatedVideo.secureUrl || generatedVideo.url} controls preload="metadata" />
                   <div className="reel-meta">
-                    <p className="muted">{generatedVideo.publicId}</p>
+                    <p className="muted video-public-id">{generatedVideo.publicId}</p>
                     <p className="muted">
                       Ratio: {generatedVideo.aspectRatio || "9:16"}
                       {generatedVideo.resolution
@@ -2140,7 +2140,7 @@ export default function App() {
                     <video src={video.secureUrl || video.url} controls preload="metadata" />
                     <div className="reel-meta">
                       <p className="subtitle">Cuenta: {video.accountName || video.accountId}</p>
-                      <p className="muted">{video.publicId}</p>
+                      <p className="muted video-public-id">{video.publicId}</p>
                       <p className="muted">
                         Ratio: {video.aspectRatio || "N/A"}
                         {video.resolution
@@ -2213,7 +2213,7 @@ export default function App() {
                     <video src={video.secureUrl || video.url} controls preload="metadata" />
                     <div className="reel-meta">
                       <p className="subtitle">Cuenta: {video.accountName || video.accountId}</p>
-                      <p className="muted">{video.publicId}</p>
+                      <p className="muted video-public-id">{video.publicId}</p>
                       <p className="muted">
                         Ratio: {video.aspectRatio || "N/A"}
                         {video.resolution
