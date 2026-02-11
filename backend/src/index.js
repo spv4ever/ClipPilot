@@ -69,6 +69,7 @@ let mongoClient;
 let usersCollection;
 let accountsCollection;
 let reelsCollection;
+let videosCollection;
 
 app.use(
   cors({
@@ -151,6 +152,21 @@ const getReelsCollection = async () => {
   const db = client.db(mongoDbName);
   reelsCollection = db.collection("reels");
   return reelsCollection;
+};
+
+const getVideosCollection = async () => {
+  if (videosCollection) {
+    return videosCollection;
+  }
+
+  const client = await getMongoClient();
+  if (!client) {
+    return null;
+  }
+
+  const db = client.db(mongoDbName);
+  videosCollection = db.collection("videos");
+  return videosCollection;
 };
 
 const ensureAuthenticated = (req, res, next) => {
@@ -2231,6 +2247,11 @@ app.post(
         return res.status(404).json({ error: "account-not-found" });
       }
 
+      const videos = await getVideosCollection();
+      if (!videos) {
+        return res.status(503).json({ error: "storage-unavailable" });
+      }
+
       const selectedPositivePrompt =
         typeof positivePrompt === "string" && positivePrompt.trim()
           ? positivePrompt.trim()
@@ -2324,22 +2345,33 @@ app.post(
 
         const uploadResult = await uploadResponse.json();
 
+        const videoDoc = {
+          userId: req.user.id,
+          accountId: account._id.toString(),
+          accountName: account.name,
+          publicId: uploadResult.public_id,
+          url: uploadResult.url,
+          secureUrl: uploadResult.secure_url,
+          sourceImagePublicId: imagePublicId || null,
+          promptId: comfyResult.promptId,
+          aspectRatio: selectedAspectRatio,
+          resolution: selectedResolution,
+          audioAdded: Boolean(audioInfo.audioAdded),
+          audioReason: audioInfo.audioAdded ? null : audioInfo.reason || null,
+          comfyFile: {
+            filename: comfyFilename,
+            subfolder: comfySubfolder,
+            type: comfyType,
+          },
+          createdAt: new Date(),
+        };
+
+        const insertResult = await videos.insertOne(videoDoc);
+
         return res.json({
           video: {
-            publicId: uploadResult.public_id,
-            url: uploadResult.url,
-            secureUrl: uploadResult.secure_url,
-            sourceImagePublicId: imagePublicId || null,
-            promptId: comfyResult.promptId,
-            aspectRatio: selectedAspectRatio,
-            resolution: selectedResolution,
-            audioAdded: Boolean(audioInfo.audioAdded),
-            audioReason: audioInfo.audioAdded ? null : audioInfo.reason || null,
-            comfyFile: {
-              filename: comfyFilename,
-              subfolder: comfySubfolder,
-              type: comfyType,
-            },
+            id: insertResult.insertedId.toString(),
+            ...videoDoc,
           },
         });
       } finally {
@@ -2359,6 +2391,40 @@ app.post(
     }
   }
 );
+
+app.get("/api/videos", ensureAuthenticated, async (req, res, next) => {
+  try {
+    const videos = await getVideosCollection();
+    if (!videos) {
+      return res.status(503).json({ error: "storage-unavailable" });
+    }
+
+    const items = await videos
+      .find({ userId: req.user.id })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    return res.json({
+      videos: items.map((video) => ({
+        id: video._id.toString(),
+        accountId: video.accountId,
+        accountName: video.accountName,
+        publicId: video.publicId,
+        url: video.url,
+        secureUrl: video.secureUrl,
+        sourceImagePublicId: video.sourceImagePublicId || null,
+        promptId: video.promptId || null,
+        aspectRatio: video.aspectRatio || null,
+        resolution: video.resolution || null,
+        audioAdded: Boolean(video.audioAdded),
+        audioReason: video.audioReason || null,
+        createdAt: video.createdAt,
+      })),
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
 
 app.get("/api/reels", ensureAuthenticated, async (req, res, next) => {
   try {

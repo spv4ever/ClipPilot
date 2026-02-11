@@ -66,6 +66,9 @@ export default function App() {
   const [reelPreviewEnabled, setReelPreviewEnabled] = useState({});
   const [reelsStatus, setReelsStatus] = useState("idle");
   const [reelsError, setReelsError] = useState("");
+  const [videos, setVideos] = useState([]);
+  const [videosStatus, setVideosStatus] = useState("idle");
+  const [videosError, setVideosError] = useState("");
   const [copyIdea, setCopyIdea] = useState("");
   const [copyObjective, setCopyObjective] = useState("");
   const [copyAudience, setCopyAudience] = useState("");
@@ -381,6 +384,33 @@ export default function App() {
       console.error(err);
       setReelsError("No se pudieron cargar los reels.");
       setReelsStatus("error");
+    }
+  };
+
+  const loadVideos = async () => {
+    try {
+      setVideosStatus("loading");
+      setVideosError("");
+      const response = await fetch(`${backendUrl}/api/videos`, {
+        credentials: "include",
+      });
+
+      if (handleUnauthorized(response)) {
+        setVideos([]);
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error("No se pudieron cargar los videos.");
+      }
+
+      const payload = await response.json();
+      setVideos(payload.videos || []);
+      setVideosStatus("success");
+    } catch (err) {
+      console.error(err);
+      setVideosError("No se pudieron cargar los videos.");
+      setVideosStatus("error");
     }
   };
 
@@ -1129,6 +1159,7 @@ export default function App() {
     setGeneratedVideo(null);
     setVideoGenerationError("");
     setView("video-workflow");
+    loadVideos();
   };
 
   const handleGenerateVideo = async () => {
@@ -1208,6 +1239,7 @@ export default function App() {
       }
 
       setGeneratedVideo(payload?.video || null);
+      loadVideos();
     } catch (error) {
       console.error(error);
       setVideoGenerationError(error.message || "No se pudo generar el video.");
@@ -1954,7 +1986,7 @@ export default function App() {
           <section className="card video-workflow">
             {videoSourceImage ? (
               <div className="video-workflow-grid">
-                <div className="video-workflow-preview">
+                <div className="video-workflow-preview reel-card">
                   <img
                     src={videoSourceImage.secureUrl || videoSourceImage.url}
                     alt={videoSourceImage.publicId}
@@ -2058,6 +2090,55 @@ export default function App() {
               </div>
             </section>
           )}
+
+          <section className="card">
+            <header className="list-header">
+              <div>
+                <h2>Listado de videos generados</h2>
+                <p className="subtitle">
+                  {videos.length
+                    ? `${videos.length} videos disponibles`
+                    : "Aún no hay videos generados."}
+                </p>
+              </div>
+              <button
+                className="secondary"
+                type="button"
+                onClick={loadVideos}
+                disabled={videosStatus === "loading"}
+              >
+                Refrescar
+              </button>
+            </header>
+            {videosError && <p className="error">{videosError}</p>}
+            {videosStatus === "loading" && <p className="muted">Cargando videos...</p>}
+            {videos.length > 0 ? (
+              <div className="reel-grid">
+                {videos.map((video) => (
+                  <article className="reel-card" key={video.id || video.publicId}>
+                    <video src={video.secureUrl || video.url} controls preload="metadata" />
+                    <div className="reel-meta">
+                      <p className="subtitle">Cuenta: {video.accountName || video.accountId}</p>
+                      <p className="muted">{video.publicId}</p>
+                      <p className="muted">
+                        Ratio: {video.aspectRatio || "N/A"}
+                        {video.resolution
+                          ? ` · ${video.resolution.width}x${video.resolution.height}`
+                          : ""}
+                      </p>
+                      <p className="muted">
+                        Audio: {video.audioAdded ? "añadido" : "no añadido"}
+                      </p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              videosStatus !== "loading" && (
+                <p className="empty">No hay videos generados todavía.</p>
+              )
+            )}
+          </section>
         </main>
       )}
 
