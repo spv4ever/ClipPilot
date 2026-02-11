@@ -646,6 +646,22 @@ label.select-inline span {
   gap: 0.25rem;
 }
 
+
+.video-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 240px));
+  justify-content: flex-start;
+}
+
+.video-card {
+  max-width: 240px;
+}
+
+.video-card video {
+  aspect-ratio: 9 / 16;
+  object-fit: cover;
+  max-height: 320px;
+}
+
 .reel-copy {
   font-size: 0.85rem;
   color: #e2e8f0;
