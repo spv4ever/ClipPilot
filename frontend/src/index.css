@@ -841,7 +841,8 @@ label.select-inline span {
 }
 
 .video-workflow-form textarea,
-.video-workflow-form input {
+.video-workflow-form input,
+.video-workflow-form select {
   width: 100%;
   border-radius: 12px;
   border: 1px solid rgba(148, 163, 184, 0.35);
@@ -852,7 +853,7 @@ label.select-inline span {
 
 .video-workflow-inline-fields {
   display: grid;
-  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
   gap: 0.9rem;
 }
 
