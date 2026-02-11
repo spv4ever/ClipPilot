@@ -282,7 +282,11 @@ const requestOpenAiCopy = async ({ imageUrl }) => {
   return buildCopyText(parsed);
 };
 
-const requestOpenAiWanI2vPrompt = async ({ imageUrl, currentPrompt = "" }) => {
+const requestOpenAiWanI2vPrompt = async ({
+  imageUrl,
+  currentPrompt = "",
+  creativeDirection = "",
+}) => {
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -307,9 +311,13 @@ const requestOpenAiWanI2vPrompt = async ({ imageUrl, currentPrompt = "" }) => {
               type: "text",
               text:
                 "Analyze the image and create the best positive prompt to animate it in Wan 2.2 i2v. " +
-                "Focus on camera movement, subject motion, atmosphere, and cinematic detail while preserving identity and composition. " +
+                "Respect the image identity (main subject, style, framing and lighting) and avoid changing who/what appears in frame. " +
+                "Translate the creative direction into concrete visual action that clearly states what should happen in the scene. " +
+                "Focus on camera movement, subject motion, atmosphere, timing beats, and cinematic detail while preserving composition. " +
+                "Write one production-ready prompt in natural English, specific but concise, and avoid list formatting. " +
                 "Avoid mentioning text overlays, watermarks, or quality disclaimers. " +
                 `Current prompt (optional reference): ${currentPrompt || "none"}. ` +
+                `Creative direction (optional): ${creativeDirection || "none"}. ` +
                 'Return JSON with this schema only: {"prompt":"..."}.',
             },
             { type: "image_url", image_url: { url: imageUrl } },
@@ -2461,7 +2469,7 @@ app.post(
   ensureAuthenticated,
   async (req, res, next) => {
     const { id } = req.params;
-    const { imageUrl, currentPrompt } = req.body || {};
+    const { imageUrl, currentPrompt, creativeDirection } = req.body || {};
 
     if (!imageUrl || typeof imageUrl !== "string") {
       return res.status(400).json({ error: "invalid-image-url" });
@@ -2492,6 +2500,10 @@ app.post(
       const prompt = await requestOpenAiWanI2vPrompt({
         imageUrl,
         currentPrompt: typeof currentPrompt === "string" ? currentPrompt.trim() : "",
+        creativeDirection:
+          typeof creativeDirection === "string"
+            ? creativeDirection.trim().slice(0, 700)
+            : "",
       });
 
       return res.json({ prompt });
