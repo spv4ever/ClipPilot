@@ -2092,8 +2092,8 @@ export default function App() {
                   <p className="subtitle">Subido en la carpeta videos de Cloudinary.</p>
                 </div>
               </header>
-              <div className="reel-grid">
-                <article className="reel-card">
+              <div className="reel-grid video-grid">
+                <article className="reel-card video-card">
                   <video src={generatedVideo.secureUrl || generatedVideo.url} controls preload="metadata" />
                   <div className="reel-meta">
                     <p className="muted">{generatedVideo.publicId}</p>
@@ -2134,9 +2134,9 @@ export default function App() {
             {videosError && <p className="error">{videosError}</p>}
             {videosStatus === "loading" && <p className="muted">Cargando videos...</p>}
             {videos.length > 0 ? (
-              <div className="reel-grid">
+              <div className="reel-grid video-grid">
                 {videos.map((video) => (
-                  <article className="reel-card" key={video.id || video.publicId}>
+                  <article className="reel-card video-card" key={video.id || video.publicId}>
                     <video src={video.secureUrl || video.url} controls preload="metadata" />
                     <div className="reel-meta">
                       <p className="subtitle">Cuenta: {video.accountName || video.accountId}</p>
@@ -2207,9 +2207,9 @@ export default function App() {
             {videosError && <p className="error">{videosError}</p>}
             {videosStatus === "loading" && <p className="muted">Cargando videos...</p>}
             {videos.length > 0 ? (
-              <div className="reel-grid">
+              <div className="reel-grid video-grid">
                 {videos.map((video) => (
-                  <article className="reel-card" key={video.id || video.publicId}>
+                  <article className="reel-card video-card" key={video.id || video.publicId}>
                     <video src={video.secureUrl || video.url} controls preload="metadata" />
                     <div className="reel-meta">
                       <p className="subtitle">Cuenta: {video.accountName || video.accountId}</p>
