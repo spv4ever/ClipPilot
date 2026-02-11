@@ -76,6 +76,16 @@ export default function App() {
   const [copyOutput, setCopyOutput] = useState("");
   const [copyError, setCopyError] = useState("");
   const [copyCopied, setCopyCopied] = useState(false);
+  const [videoSourceImage, setVideoSourceImage] = useState(null);
+  const [videoPositivePrompt, setVideoPositivePrompt] = useState("animate image");
+  const [videoNegativePrompt, setVideoNegativePrompt] = useState(
+    "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走"
+  );
+  const [videoFrameLength, setVideoFrameLength] = useState(81);
+  const [videoFps, setVideoFps] = useState(32);
+  const [videoGenerationStatus, setVideoGenerationStatus] = useState("idle");
+  const [videoGenerationError, setVideoGenerationError] = useState("");
+  const [generatedVideo, setGeneratedVideo] = useState(null);
   const hasRestoredView = useRef(false);
 
   const displayName = useMemo(() => user?.displayName || "", [user]);
@@ -572,6 +582,9 @@ export default function App() {
     setImageFilter("all");
     setImagePageSize(50);
     setSelectedReelImages([]);
+    setVideoSourceImage(null);
+    setGeneratedVideo(null);
+    setVideoGenerationError("");
     setView("account-images");
     loadImages({ accountId: account.id, limit: 50, filter: "all", baseStack: [] });
     loadReelImageStats(account.id);
@@ -1106,6 +1119,84 @@ export default function App() {
         delete next[image.id];
         return next;
       });
+    }
+  };
+
+  const handleOpenVideoWorkflow = (image) => {
+    setVideoSourceImage(image);
+    setGeneratedVideo(null);
+    setVideoGenerationError("");
+    setView("video-workflow");
+  };
+
+  const handleGenerateVideo = async () => {
+    if (!selectedAccount || !videoSourceImage) {
+      setVideoGenerationError("Selecciona una imagen para iniciar el workflow.");
+      return;
+    }
+
+    const parsedLength = Number(videoFrameLength);
+    const parsedFps = Number(videoFps);
+    if (!Number.isFinite(parsedLength) || parsedLength < 8 || parsedLength > 240) {
+      setVideoGenerationError("La duración en frames debe estar entre 8 y 240.");
+      return;
+    }
+    if (!Number.isFinite(parsedFps) || parsedFps < 8 || parsedFps > 60) {
+      setVideoGenerationError("Los FPS deben estar entre 8 y 60.");
+      return;
+    }
+
+    try {
+      setVideoGenerationStatus("loading");
+      setVideoGenerationError("");
+      const response = await fetch(
+        `${backendUrl}/api/accounts/${selectedAccount.id}/videos/from-image`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            imageUrl: videoSourceImage.secureUrl || videoSourceImage.url,
+            imagePublicId: videoSourceImage.publicId,
+            positivePrompt: videoPositivePrompt,
+            negativePrompt: videoNegativePrompt,
+            frameLength: parsedLength,
+            fps: parsedFps,
+          }),
+        }
+      );
+
+      if (handleUnauthorized(response)) {
+        return;
+      }
+
+      let payload;
+      try {
+        payload = await response.json();
+      } catch (error) {
+        payload = null;
+      }
+
+      if (!response.ok) {
+        const messageByError = {
+          "invalid-image-url": "Falta la URL de imagen para ComfyUI.",
+          "invalid-frame-length": "Duración inválida. Usa entre 8 y 240 frames.",
+          "invalid-fps": "FPS inválidos. Usa entre 8 y 60.",
+          "cloudinary-credentials-missing": "Faltan credenciales de Cloudinary en la cuenta.",
+          "comfyui-output-file-not-found": "ComfyUI terminó, pero no se encontró el archivo en la carpeta output.",
+          "comfyui-timeout": "ComfyUI tardó demasiado en generar el video.",
+        };
+        throw new Error(messageByError[payload?.error] || "No se pudo generar el video.");
+      }
+
+      setGeneratedVideo(payload?.video || null);
+    } catch (error) {
+      console.error(error);
+      setVideoGenerationError(error.message || "No se pudo generar el video.");
+    } finally {
+      setVideoGenerationStatus("idle");
     }
   };
 
@@ -1802,6 +1893,14 @@ export default function App() {
                         >
                           {image.isFinal ? "Final activo" : "Final"}
                         </button>
+                        <button
+                          className="secondary small video-workflow-trigger"
+                          type="button"
+                          onClick={() => handleOpenVideoWorkflow(image)}
+                          title="Generar video desde esta imagen"
+                        >
+                          🎬 Video
+                        </button>
                       </div>
                     </div>
                   );
@@ -1815,6 +1914,111 @@ export default function App() {
               </p>
             )}
           </section>
+        </main>
+      )}
+
+      {view === "video-workflow" && selectedAccount && (
+        <main className="library-view">
+          <header className="library-view-header">
+            <div>
+              <p className="eyebrow">Workflow ComfyUI</p>
+              <h1>Generar video desde imagen</h1>
+              <p className="subtitle">
+                Cuenta: {selectedAccount.name} · ComfyUI en localhost:8188
+              </p>
+            </div>
+            <div className="header-actions">
+              <button className="secondary" onClick={() => setView("account-images")}>
+                Volver a imágenes
+              </button>
+            </div>
+          </header>
+
+          <section className="card video-workflow">
+            {videoSourceImage ? (
+              <div className="video-workflow-grid">
+                <div className="video-workflow-preview">
+                  <img
+                    src={videoSourceImage.secureUrl || videoSourceImage.url}
+                    alt={videoSourceImage.publicId}
+                  />
+                  <p className="muted">Origen: {videoSourceImage.publicId}</p>
+                </div>
+                <div className="video-workflow-form">
+                  <label>
+                    Prompt positivo
+                    <textarea
+                      rows="3"
+                      value={videoPositivePrompt}
+                      onChange={(event) => setVideoPositivePrompt(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Prompt negativo
+                    <textarea
+                      rows="4"
+                      value={videoNegativePrompt}
+                      onChange={(event) => setVideoNegativePrompt(event.target.value)}
+                    />
+                  </label>
+                  <div className="video-workflow-inline-fields">
+                    <label>
+                      Duración (frames)
+                      <input
+                        type="number"
+                        min="8"
+                        max="240"
+                        value={videoFrameLength}
+                        onChange={(event) => setVideoFrameLength(event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      FPS
+                      <input
+                        type="number"
+                        min="8"
+                        max="60"
+                        value={videoFps}
+                        onChange={(event) => setVideoFps(event.target.value)}
+                      />
+                    </label>
+                  </div>
+                  <button
+                    className="primary"
+                    type="button"
+                    onClick={handleGenerateVideo}
+                    disabled={videoGenerationStatus === "loading"}
+                  >
+                    {videoGenerationStatus === "loading"
+                      ? "Generando video..."
+                      : "Generar video con workflow"}
+                  </button>
+                  {videoGenerationError && <p className="error">{videoGenerationError}</p>}
+                </div>
+              </div>
+            ) : (
+              <p className="empty">Selecciona una imagen en la librería para iniciar.</p>
+            )}
+          </section>
+
+          {generatedVideo && (
+            <section className="card">
+              <header className="list-header">
+                <div>
+                  <h2>Video generado</h2>
+                  <p className="subtitle">Subido en la carpeta videos de Cloudinary.</p>
+                </div>
+              </header>
+              <div className="reel-grid">
+                <article className="reel-card">
+                  <video src={generatedVideo.secureUrl || generatedVideo.url} controls preload="metadata" />
+                  <div className="reel-meta">
+                    <p className="muted">{generatedVideo.publicId}</p>
+                  </div>
+                </article>
+              </div>
+            </section>
+          )}
         </main>
       )}
 
