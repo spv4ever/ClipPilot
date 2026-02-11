@@ -514,6 +514,9 @@ export default function App() {
     } else if (storedView === "reels") {
       setView("reels");
       loadReels();
+    } else if (storedView === "videos-overview") {
+      setView("videos-overview");
+      loadVideos();
     } else {
       setView("home");
     }
@@ -620,6 +623,11 @@ export default function App() {
     setView("account-images");
     loadImages({ accountId: account.id, limit: 50, filter: "all", baseStack: [] });
     loadReelImageStats(account.id);
+  };
+
+  const handleOpenVideosOverview = () => {
+    setView("videos-overview");
+    loadVideos();
   };
 
   const handleImageFilterChange = (nextFilter) => {
@@ -1282,6 +1290,9 @@ export default function App() {
               >
                 Ver reels
               </button>
+              <button className="secondary" onClick={handleOpenVideosOverview}>
+                Ver videos
+              </button>
               <button className="secondary" onClick={handleLogout}>
                 Cerrar sesión
               </button>
@@ -1302,16 +1313,21 @@ export default function App() {
               Gestiona tus cuentas de Cloudinary y mantén tus credenciales seguras.
             </p>
             {isAuthenticated && (
-              <button
-                className="primary"
-                type="button"
-                onClick={() => {
-                  setView("reels");
-                  loadReels();
-                }}
-              >
-                Ver reels creados
-              </button>
+              <div className="header-actions">
+                <button
+                  className="primary"
+                  type="button"
+                  onClick={() => {
+                    setView("reels");
+                    loadReels();
+                  }}
+                >
+                  Ver reels creados
+                </button>
+                <button className="secondary" type="button" onClick={handleOpenVideosOverview}>
+                  Ver todos los videos
+                </button>
+              </div>
             )}
           </div>
           {accounts.length === 0 ? (
@@ -1512,9 +1528,14 @@ export default function App() {
                 Cloud name: {selectedAccount.cloudName}
               </p>
             </div>
-            <button className="secondary" onClick={() => setView("home")}>
-              Volver a conexiones
-            </button>
+            <div className="header-actions">
+              <button className="secondary" onClick={() => setView("home")}>
+                Volver a conexiones
+              </button>
+              <button className="secondary" onClick={handleOpenVideosOverview}>
+                Ver videos
+              </button>
+            </div>
           </header>
 
           <section className="card reel-generator">
@@ -2090,6 +2111,79 @@ export default function App() {
               </div>
             </section>
           )}
+
+          <section className="card">
+            <header className="list-header">
+              <div>
+                <h2>Listado de videos generados</h2>
+                <p className="subtitle">
+                  {videos.length
+                    ? `${videos.length} videos disponibles`
+                    : "Aún no hay videos generados."}
+                </p>
+              </div>
+              <button
+                className="secondary"
+                type="button"
+                onClick={loadVideos}
+                disabled={videosStatus === "loading"}
+              >
+                Refrescar
+              </button>
+            </header>
+            {videosError && <p className="error">{videosError}</p>}
+            {videosStatus === "loading" && <p className="muted">Cargando videos...</p>}
+            {videos.length > 0 ? (
+              <div className="reel-grid">
+                {videos.map((video) => (
+                  <article className="reel-card" key={video.id || video.publicId}>
+                    <video src={video.secureUrl || video.url} controls preload="metadata" />
+                    <div className="reel-meta">
+                      <p className="subtitle">Cuenta: {video.accountName || video.accountId}</p>
+                      <p className="muted">{video.publicId}</p>
+                      <p className="muted">
+                        Ratio: {video.aspectRatio || "N/A"}
+                        {video.resolution
+                          ? ` · ${video.resolution.width}x${video.resolution.height}`
+                          : ""}
+                      </p>
+                      <p className="muted">
+                        Audio: {video.audioAdded ? "añadido" : "no añadido"}
+                      </p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              videosStatus !== "loading" && (
+                <p className="empty">No hay videos generados todavía.</p>
+              )
+            )}
+          </section>
+        </main>
+      )}
+
+      {view === "videos-overview" && (
+        <main className="library-view">
+          <header className="library-view-header">
+            <div>
+              <p className="eyebrow">Videos generados</p>
+              <h1>Biblioteca global de videos</h1>
+              <p className="subtitle">
+                Revisa todos los videos generados sin depender de una imagen específica.
+              </p>
+            </div>
+            <div className="header-actions">
+              {selectedAccount && (
+                <button className="secondary" onClick={() => setView("account-images")}>
+                  Volver a imágenes
+                </button>
+              )}
+              <button className="secondary" onClick={() => setView("home")}>
+                Volver a inicio
+              </button>
+            </div>
+          </header>
 
           <section className="card">
             <header className="list-header">
