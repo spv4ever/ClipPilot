@@ -733,7 +733,9 @@ const comfyUiOutputDir =
   "C:\\StabilyMatrix\\Data\\Packages\\ComfyUI-dev\\output";
 const videoAspectRatioPresets = {
   "9:16": { width: 576, height: 1024 },
+  "3:4": { width: 528, height: 704 },
   "1:1": { width: 768, height: 768 },
+  "4:3": { width: 704, height: 528 },
   "16:9": { width: 1024, height: 576 },
 };
 const activeVideoGenerationJobs = new Set();

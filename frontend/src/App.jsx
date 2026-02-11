@@ -1152,7 +1152,7 @@ export default function App() {
       return;
     }
 
-    const validAspectRatios = new Set(["9:16", "1:1", "16:9"]);
+    const validAspectRatios = new Set(["9:16", "3:4", "1:1", "4:3", "16:9"]);
     if (!validAspectRatios.has(videoAspectRatio)) {
       setVideoGenerationError("Selecciona una relación de aspecto válida.");
       return;
@@ -1198,7 +1198,7 @@ export default function App() {
           "invalid-image-url": "Falta la URL de imagen para ComfyUI.",
           "invalid-frame-length": "Duración inválida. Usa entre 8 y 240 frames.",
           "invalid-fps": "FPS inválidos. Usa entre 8 y 60.",
-          "invalid-aspect-ratio": "Selecciona un aspect ratio válido (9:16, 1:1, 16:9).",
+          "invalid-aspect-ratio": "Selecciona un aspect ratio válido (9:16, 3:4, 1:1, 4:3, 16:9).",
           "video-generation-in-progress": "Ya hay una generación en curso para esta imagen.",
           "cloudinary-credentials-missing": "Faltan credenciales de Cloudinary en la cuenta.",
           "comfyui-output-file-not-found": "ComfyUI terminó, pero no se encontró el archivo en la carpeta output.",
@@ -2006,7 +2006,9 @@ export default function App() {
                         onChange={(event) => setVideoAspectRatio(event.target.value)}
                       >
                         <option value="9:16">9:16 · 576×1024</option>
+                        <option value="3:4">3:4 · 528×704</option>
                         <option value="1:1">1:1 · 768×768</option>
+                        <option value="4:3">4:3 · 704×528</option>
                         <option value="16:9">16:9 · 1024×576</option>
                       </select>
                     </label>
