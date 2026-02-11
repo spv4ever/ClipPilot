@@ -731,6 +731,12 @@ const comfyUiBaseUrl = process.env.COMFYUI_BASE_URL || "http://localhost:8188";
 const comfyUiOutputDir =
   process.env.COMFYUI_OUTPUT_DIR ||
   "C:\\StabilyMatrix\\Data\\Packages\\ComfyUI-dev\\output";
+const videoAspectRatioPresets = {
+  "9:16": { width: 576, height: 1024 },
+  "1:1": { width: 768, height: 768 },
+  "16:9": { width: 1024, height: 576 },
+};
+const activeVideoGenerationJobs = new Set();
 
 const comfyWorkflowTemplate = {
   84: {
@@ -925,24 +931,50 @@ const comfyWorkflowTemplate = {
   },
 };
 
-const buildComfyWorkflow = ({ imageUrl, positivePrompt, negativePrompt, length, fps }) => {
+const buildComfyWorkflow = ({
+  imageUrl,
+  positivePrompt,
+  negativePrompt,
+  length,
+  fps,
+  width,
+  height,
+}) => {
   const workflow = JSON.parse(JSON.stringify(comfyWorkflowTemplate));
   workflow[117].inputs.image = imageUrl;
   workflow[93].inputs.text = positivePrompt;
   workflow[89].inputs.text = negativePrompt;
   workflow[98].inputs.length = length;
+  workflow[98].inputs.width = width;
+  workflow[98].inputs.height = height;
   workflow[113].inputs.fps = fps;
   return workflow;
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const runComfyWorkflow = async ({ imageUrl, positivePrompt, negativePrompt, length, fps }) => {
+const runComfyWorkflow = async ({
+  imageUrl,
+  positivePrompt,
+  negativePrompt,
+  length,
+  fps,
+  width,
+  height,
+}) => {
   const promptResponse = await fetch(`${comfyUiBaseUrl}/prompt`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      prompt: buildComfyWorkflow({ imageUrl, positivePrompt, negativePrompt, length, fps }),
+      prompt: buildComfyWorkflow({
+        imageUrl,
+        positivePrompt,
+        negativePrompt,
+        length,
+        fps,
+        width,
+        height,
+      }),
       client_id: `clippilot-${Date.now()}`,
     }),
   });
@@ -991,6 +1023,58 @@ const runComfyWorkflow = async ({ imageUrl, positivePrompt, negativePrompt, leng
   }
 
   throw new Error("comfyui-timeout");
+};
+
+const addRandomAudioTrackToVideo = async ({ inputPath, outputPath }) => {
+  const audioDirectory = path.resolve(__dirname, "..", "audio");
+  const audioFiles = await getAudioFiles(audioDirectory);
+  if (audioFiles.length === 0) {
+    return { outputPath: inputPath, audioAdded: false, reason: "no-audio-files" };
+  }
+
+  const selectedAudio = audioFiles[Math.floor(Math.random() * audioFiles.length)];
+  const videoDuration = await getMediaDurationSeconds(inputPath);
+  if (videoDuration <= 0) {
+    return { outputPath: inputPath, audioAdded: false, reason: "invalid-video-duration" };
+  }
+
+  const audioDuration = await getMediaDurationSeconds(selectedAudio);
+  const hasRoomForStart = audioDuration > videoDuration;
+  const maxStart = hasRoomForStart ? audioDuration - videoDuration : 0;
+  const audioStart = (hasRoomForStart ? Math.random() * maxStart : 0).toFixed(3);
+
+  await runFfmpeg([
+    "-y",
+    ...(hasRoomForStart ? [] : ["-stream_loop", "-1"]),
+    "-i",
+    inputPath,
+    "-ss",
+    audioStart,
+    "-t",
+    videoDuration.toFixed(3),
+    "-i",
+    selectedAudio,
+    "-filter_complex",
+    `[1:a]atrim=0:${videoDuration.toFixed(3)},asetpts=PTS-STARTPTS[audio]`,
+    "-map",
+    "0:v:0",
+    "-map",
+    "[audio]",
+    "-c:v",
+    "copy",
+    "-c:a",
+    "aac",
+    "-b:a",
+    "192k",
+    "-shortest",
+    outputPath,
+  ]);
+
+  return {
+    outputPath,
+    audioAdded: true,
+    selectedAudio: path.basename(selectedAudio),
+  };
 };
 
 passport.use(
@@ -2089,40 +2173,55 @@ app.post(
   "/api/accounts/:id/videos/from-image",
   ensureAuthenticated,
   async (req, res, next) => {
+    const { id } = req.params;
+    const {
+      imageUrl,
+      imagePublicId,
+      positivePrompt,
+      negativePrompt,
+      frameLength,
+      fps,
+      aspectRatio,
+    } = req.body || {};
+
+    if (!imageUrl || typeof imageUrl !== "string") {
+      return res.status(400).json({ error: "invalid-image-url" });
+    }
+
+    const parsedFrameLength = Number(frameLength);
+    const parsedFps = Number(fps);
+    if (!Number.isFinite(parsedFrameLength) || parsedFrameLength < 8 || parsedFrameLength > 240) {
+      return res.status(400).json({ error: "invalid-frame-length" });
+    }
+    if (!Number.isFinite(parsedFps) || parsedFps < 8 || parsedFps > 60) {
+      return res.status(400).json({ error: "invalid-fps" });
+    }
+
+    const selectedAspectRatio =
+      typeof aspectRatio === "string" && videoAspectRatioPresets[aspectRatio]
+        ? aspectRatio
+        : "9:16";
+    if (!videoAspectRatioPresets[selectedAspectRatio]) {
+      return res.status(400).json({ error: "invalid-aspect-ratio" });
+    }
+
+    let accountId;
+    try {
+      accountId = new ObjectId(id);
+    } catch (error) {
+      return res.status(400).json({ error: "invalid-account" });
+    }
+
+    const requestKey = `${req.user.id}:${accountId.toString()}:${imagePublicId || imageUrl}`;
+    if (activeVideoGenerationJobs.has(requestKey)) {
+      return res.status(409).json({ error: "video-generation-in-progress" });
+    }
+
+    activeVideoGenerationJobs.add(requestKey);
     try {
       const accounts = await getAccountsCollection();
       if (!accounts) {
         return res.status(503).json({ error: "storage-unavailable" });
-      }
-
-      const { id } = req.params;
-      const {
-        imageUrl,
-        imagePublicId,
-        positivePrompt,
-        negativePrompt,
-        frameLength,
-        fps,
-      } = req.body || {};
-
-      if (!imageUrl || typeof imageUrl !== "string") {
-        return res.status(400).json({ error: "invalid-image-url" });
-      }
-
-      const parsedFrameLength = Number(frameLength);
-      const parsedFps = Number(fps);
-      if (!Number.isFinite(parsedFrameLength) || parsedFrameLength < 8 || parsedFrameLength > 240) {
-        return res.status(400).json({ error: "invalid-frame-length" });
-      }
-      if (!Number.isFinite(parsedFps) || parsedFps < 8 || parsedFps > 60) {
-        return res.status(400).json({ error: "invalid-fps" });
-      }
-
-      let accountId;
-      try {
-        accountId = new ObjectId(id);
-      } catch (error) {
-        return res.status(400).json({ error: "invalid-account" });
       }
 
       const account = await accounts.findOne({ _id: accountId, userId: req.user.id });
@@ -2138,6 +2237,7 @@ app.post(
         typeof negativePrompt === "string" && negativePrompt.trim()
           ? negativePrompt.trim()
           : "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走";
+      const selectedResolution = videoAspectRatioPresets[selectedAspectRatio];
 
       const comfyResult = await runComfyWorkflow({
         imageUrl,
@@ -2145,6 +2245,8 @@ app.post(
         negativePrompt: selectedNegativePrompt,
         length: Math.floor(parsedFrameLength),
         fps: Math.floor(parsedFps),
+        width: selectedResolution.width,
+        height: selectedResolution.height,
       });
 
       const comfyFilename = comfyResult.videoInfo.filename;
@@ -2158,7 +2260,6 @@ app.post(
         comfyPath = path.join(comfyUiOutputDir, comfySubfolder, comfyFilename);
       }
 
-      const fileBuffer = await fs.readFile(comfyPath);
       const timestamp = Math.floor(Date.now() / 1000);
       const publicId = [
         "videos",
@@ -2180,44 +2281,69 @@ app.post(
         apiSecret
       );
 
-      const formData = new FormData();
-      formData.append("file", new Blob([fileBuffer]), `${path.basename(publicId)}.mp4`);
-      formData.append("api_key", account.apiKey);
-      formData.append("timestamp", String(timestamp));
-      formData.append("public_id", publicId);
-      formData.append("folder", "videos");
-      formData.append("signature", signature);
+      const tempVideoPath = path.join(os.tmpdir(), `clippilot-video-${Date.now()}.mp4`);
+      const tempVideoWithAudioPath = path.join(
+        os.tmpdir(),
+        `clippilot-video-audio-${Date.now()}.mp4`
+      );
+      let renderedVideoPath = tempVideoPath;
+      let audioInfo = { audioAdded: false, reason: "audio-not-processed" };
 
-      const uploadUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/video/upload`;
-      const uploadResponse = await fetch(uploadUrl, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!uploadResponse.ok) {
-        const errorBody = await uploadResponse.text();
-        return res.status(uploadResponse.status).json({
-          error: "cloudinary-upload-failed",
-          details: errorBody,
+      try {
+        await fs.copyFile(comfyPath, tempVideoPath);
+        audioInfo = await addRandomAudioTrackToVideo({
+          inputPath: tempVideoPath,
+          outputPath: tempVideoWithAudioPath,
         });
-      }
+        renderedVideoPath = audioInfo.outputPath;
 
-      const uploadResult = await uploadResponse.json();
+        const fileBuffer = await fs.readFile(renderedVideoPath);
+        const formData = new FormData();
+        formData.append("file", new Blob([fileBuffer]), `${path.basename(publicId)}.mp4`);
+        formData.append("api_key", account.apiKey);
+        formData.append("timestamp", String(timestamp));
+        formData.append("public_id", publicId);
+        formData.append("folder", "videos");
+        formData.append("signature", signature);
 
-      return res.json({
-        video: {
-          publicId: uploadResult.public_id,
-          url: uploadResult.url,
-          secureUrl: uploadResult.secure_url,
-          sourceImagePublicId: imagePublicId || null,
-          promptId: comfyResult.promptId,
-          comfyFile: {
-            filename: comfyFilename,
-            subfolder: comfySubfolder,
-            type: comfyType,
+        const uploadUrl = `https://api.cloudinary.com/v1_1/${account.cloudName}/video/upload`;
+        const uploadResponse = await fetch(uploadUrl, {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!uploadResponse.ok) {
+          const errorBody = await uploadResponse.text();
+          return res.status(uploadResponse.status).json({
+            error: "cloudinary-upload-failed",
+            details: errorBody,
+          });
+        }
+
+        const uploadResult = await uploadResponse.json();
+
+        return res.json({
+          video: {
+            publicId: uploadResult.public_id,
+            url: uploadResult.url,
+            secureUrl: uploadResult.secure_url,
+            sourceImagePublicId: imagePublicId || null,
+            promptId: comfyResult.promptId,
+            aspectRatio: selectedAspectRatio,
+            resolution: selectedResolution,
+            audioAdded: Boolean(audioInfo.audioAdded),
+            audioReason: audioInfo.audioAdded ? null : audioInfo.reason || null,
+            comfyFile: {
+              filename: comfyFilename,
+              subfolder: comfySubfolder,
+              type: comfyType,
+            },
           },
-        },
-      });
+        });
+      } finally {
+        await fs.rm(tempVideoPath, { force: true });
+        await fs.rm(tempVideoWithAudioPath, { force: true });
+      }
     } catch (error) {
       if (typeof error?.message === "string" && error.message.startsWith("comfyui-")) {
         return res.status(502).json({ error: error.message });
@@ -2226,6 +2352,8 @@ app.post(
         return res.status(502).json({ error: "comfyui-output-file-not-found" });
       }
       return next(error);
+    } finally {
+      activeVideoGenerationJobs.delete(requestKey);
     }
   }
 );

@@ -83,10 +83,12 @@ export default function App() {
   );
   const [videoFrameLength, setVideoFrameLength] = useState(81);
   const [videoFps, setVideoFps] = useState(32);
+  const [videoAspectRatio, setVideoAspectRatio] = useState("9:16");
   const [videoGenerationStatus, setVideoGenerationStatus] = useState("idle");
   const [videoGenerationError, setVideoGenerationError] = useState("");
   const [generatedVideo, setGeneratedVideo] = useState(null);
   const hasRestoredView = useRef(false);
+  const videoGenerationInFlightRef = useRef(false);
 
   const displayName = useMemo(() => user?.displayName || "", [user]);
   const userRole = useMemo(() => user?.role || "free", [user]);
@@ -1135,6 +1137,10 @@ export default function App() {
       return;
     }
 
+    if (videoGenerationInFlightRef.current) {
+      return;
+    }
+
     const parsedLength = Number(videoFrameLength);
     const parsedFps = Number(videoFps);
     if (!Number.isFinite(parsedLength) || parsedLength < 8 || parsedLength > 240) {
@@ -1146,7 +1152,14 @@ export default function App() {
       return;
     }
 
+    const validAspectRatios = new Set(["9:16", "1:1", "16:9"]);
+    if (!validAspectRatios.has(videoAspectRatio)) {
+      setVideoGenerationError("Selecciona una relación de aspecto válida.");
+      return;
+    }
+
     try {
+      videoGenerationInFlightRef.current = true;
       setVideoGenerationStatus("loading");
       setVideoGenerationError("");
       const response = await fetch(
@@ -1164,6 +1177,7 @@ export default function App() {
             negativePrompt: videoNegativePrompt,
             frameLength: parsedLength,
             fps: parsedFps,
+            aspectRatio: videoAspectRatio,
           }),
         }
       );
@@ -1184,6 +1198,8 @@ export default function App() {
           "invalid-image-url": "Falta la URL de imagen para ComfyUI.",
           "invalid-frame-length": "Duración inválida. Usa entre 8 y 240 frames.",
           "invalid-fps": "FPS inválidos. Usa entre 8 y 60.",
+          "invalid-aspect-ratio": "Selecciona un aspect ratio válido (9:16, 1:1, 16:9).",
+          "video-generation-in-progress": "Ya hay una generación en curso para esta imagen.",
           "cloudinary-credentials-missing": "Faltan credenciales de Cloudinary en la cuenta.",
           "comfyui-output-file-not-found": "ComfyUI terminó, pero no se encontró el archivo en la carpeta output.",
           "comfyui-timeout": "ComfyUI tardó demasiado en generar el video.",
@@ -1196,6 +1212,7 @@ export default function App() {
       console.error(error);
       setVideoGenerationError(error.message || "No se pudo generar el video.");
     } finally {
+      videoGenerationInFlightRef.current = false;
       setVideoGenerationStatus("idle");
     }
   };
@@ -1982,6 +1999,17 @@ export default function App() {
                         onChange={(event) => setVideoFps(event.target.value)}
                       />
                     </label>
+                    <label>
+                      Aspect ratio
+                      <select
+                        value={videoAspectRatio}
+                        onChange={(event) => setVideoAspectRatio(event.target.value)}
+                      >
+                        <option value="9:16">9:16 · 576×1024</option>
+                        <option value="1:1">1:1 · 768×768</option>
+                        <option value="16:9">16:9 · 1024×576</option>
+                      </select>
+                    </label>
                   </div>
                   <button
                     className="primary"
@@ -2014,6 +2042,15 @@ export default function App() {
                   <video src={generatedVideo.secureUrl || generatedVideo.url} controls preload="metadata" />
                   <div className="reel-meta">
                     <p className="muted">{generatedVideo.publicId}</p>
+                    <p className="muted">
+                      Ratio: {generatedVideo.aspectRatio || "9:16"}
+                      {generatedVideo.resolution
+                        ? ` · ${generatedVideo.resolution.width}x${generatedVideo.resolution.height}`
+                        : ""}
+                    </p>
+                    <p className="muted">
+                      Audio: {generatedVideo.audioAdded ? "añadido" : "no añadido"}
+                    </p>
                   </div>
                 </article>
               </div>
